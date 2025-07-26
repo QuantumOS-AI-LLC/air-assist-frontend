@@ -10,7 +10,7 @@ export const config = {
   get backendUrl() {
     if (this.isProduction) {
       // In production (Vercel), use relative URLs for API routes
-      return window.location.origin;
+      return typeof window !== 'undefined' ? window.location.origin : 'https://air-assist-app.vercel.app';
     }
     return import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
   },
@@ -54,20 +54,20 @@ export const config = {
 // Validation function to check required environment variables
 export const validateConfig = () => {
   const errors = [];
-  
+
   // Check if backend URL is accessible (in production)
-  if (config.isProduction && !config.backendUrl.startsWith('https://')) {
+  if (config.isProduction && config.backendUrl && !config.backendUrl.startsWith('https://')) {
     errors.push('VITE_BACKEND_URL should use HTTPS in production');
   }
-  
-  if (config.isProduction && !config.websocketUrl.startsWith('wss://')) {
+
+  if (config.isProduction && config.websocketUrl && !config.websocketUrl.startsWith('wss://')) {
     errors.push('VITE_WEBSOCKET_URL should use WSS in production');
   }
-  
+
   if (errors.length > 0) {
     console.warn('⚠️ Configuration warnings:', errors);
   }
-  
+
   return errors;
 };
 
