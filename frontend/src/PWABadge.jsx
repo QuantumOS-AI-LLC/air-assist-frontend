@@ -1,56 +1,61 @@
 import './PWABadge.css'
 
-import { useRegisterSW } from 'virtual:pwa-register/react'
+// Temporarily disabled PWA functionality for Vercel deployment
+// import { useRegisterSW } from 'virtual:pwa-register/react'
 
 function PWABadge() {
-  // periodic sync is disabled, change the value to enable it, the period is in milliseconds
-// You can remove onRegisteredSW callback and registerPeriodicSync function
-  const period = 0
+  // PWA functionality temporarily disabled
+  // Will be re-enabled after successful deployment
 
-  const {
-    offlineReady: [offlineReady, setOfflineReady],
-    needRefresh: [needRefresh, setNeedRefresh],
-    updateServiceWorker,
-  } = useRegisterSW({
-    onRegisteredSW(swUrl, r) {
-      if (period <= 0) return
-      if (r?.active?.state === 'activated') {
-        registerPeriodicSync(period, swUrl, r)
-      }
-      else if (r?.installing) {
-        r.installing.addEventListener('statechange', (e) => {
-          /** @type {ServiceWorker} */
-          const sw = e.target
-          if (sw.state === 'activated')
-            registerPeriodicSync(period, swUrl, r)
-        })
-      }
-    },
-  })
+  // const period = 0
+  // const {
+  //   offlineReady: [offlineReady, setOfflineReady],
+  //   needRefresh: [needRefresh, setNeedRefresh],
+  //   updateServiceWorker,
+  // } = useRegisterSW({
+  //   onRegisteredSW(swUrl, r) {
+  //     if (period <= 0) return
+  //     if (r?.active?.state === 'activated') {
+  //       registerPeriodicSync(period, swUrl, r)
+  //     }
+  //     else if (r?.installing) {
+  //       r.installing.addEventListener('statechange', (e) => {
+  //         /** @type {ServiceWorker} */
+  //         const sw = e.target
+  //         if (sw.state === 'activated')
+  //           registerPeriodicSync(period, swUrl, r)
+  //       })
+  //     }
+  //   },
+  // })
 
-  function close() {
-    setOfflineReady(false)
-    setNeedRefresh(false)
-  }
+  // function close() {
+  //   setOfflineReady(false)
+  //   setNeedRefresh(false)
+  // }
 
-  return (
-    <div className="PWABadge" role="alert" aria-labelledby="toast-message">
-      { (offlineReady || needRefresh)
-      && (
-        <div className="PWABadge-toast">
-          <div className="PWABadge-message">
-            { offlineReady
-              ? <span id="toast-message">App ready to work offline</span>
-              : <span id="toast-message">New content available, click on reload button to update.</span>}
-          </div>
-          <div className="PWABadge-buttons">
-            { needRefresh && <button className="PWABadge-toast-button" onClick={() => updateServiceWorker(true)}>Reload</button> }
-            <button className="PWABadge-toast-button" onClick={() => close()}>Close</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
+  // Return empty div for now
+  return <div className="PWABadge" style={{ display: 'none' }}></div>
+
+  // Original PWA UI (commented out)
+  // return (
+  //   <div className="PWABadge" role="alert" aria-labelledby="toast-message">
+  //     { (offlineReady || needRefresh)
+  //     && (
+  //       <div className="PWABadge-toast">
+  //         <div className="PWABadge-message">
+  //           { offlineReady
+  //             ? <span id="toast-message">App ready to work offline</span>
+  //             : <span id="toast-message">New content available, click on reload button to update.</span>}
+  //         </div>
+  //         <div className="PWABadge-buttons">
+  //           { needRefresh && <button className="PWABadge-toast-button" onClick={() => updateServiceWorker(true)}>Reload</button> }
+  //           <button className="PWABadge-toast-button" onClick={() => close()}>Close</button>
+  //         </div>
+  //       </div>
+  //     )}
+  //   </div>
+  // )
 }
 
 export default PWABadge
