@@ -132,6 +132,17 @@ class OpenAIRealtimeService {
           try {
             const message = JSON.parse(event.data);
             console.log("Received text message from OpenAI:", message.type || 'unknown');
+
+            // Log detailed error information
+            if (message.type === 'error') {
+              console.error("🚨 OpenAI Realtime API Error Details:");
+              console.error("Error Type:", message.error?.type);
+              console.error("Error Code:", message.error?.code);
+              console.error("Error Message:", message.error?.message);
+              console.error("Error Param:", message.error?.param);
+              console.error("Full Error Object:", JSON.stringify(message.error, null, 2));
+            }
+
             this.onMessage(message);
           } catch (parseError) {
             console.log("Received non-JSON text message:", event.data.substring(0, 100));
