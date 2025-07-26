@@ -1,5 +1,6 @@
 // Vercel serverless function for health check
 export default async function handler(req, res) {
+  console.log('Health API called:', req.method);
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
