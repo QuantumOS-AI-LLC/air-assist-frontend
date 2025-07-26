@@ -37,12 +37,24 @@ class OpenAIRealtimeService {
     this.onDisconnect = callbacks.onDisconnect || (() => {});
 
     try {
-      // Connect to our WebSocket proxy instead of directly to OpenAI
-      console.log("Connecting to OpenAI Realtime API via WebSocket proxy...");
-      const wsUrl = config.websocketUrl;
+      // Determine connection method based on environment
+      if (config.isProduction || !config.websocketUrl) {
+        // Production: Connect directly to OpenAI
+        console.log("Connecting directly to OpenAI Realtime API...");
+        const wsUrl = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17`;
 
-      // Create WebSocket connection to our proxy
-      this.ws = new WebSocket(wsUrl);
+        this.ws = new WebSocket(wsUrl, [], {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'OpenAI-Beta': 'realtime=v1'
+          }
+        });
+      } else {
+        // Development: Use local proxy
+        console.log("Connecting to OpenAI Realtime API via local WebSocket proxy...");
+        const wsUrl = config.websocketUrl;
+        this.ws = new WebSocket(wsUrl);
+      }
 
     } catch (error) {
       console.error("Failed to get ephemeral token:", error);
@@ -56,8 +68,10 @@ class OpenAIRealtimeService {
       this.isConnected = true;
       this.onConnect();
 
-      // After connection, create a session
-      this.createSession();
+      // After connection, create a session (only for proxy connections)
+      if (!config.isProduction && config.websocketUrl) {
+        this.createSession();
+      }
     };
 
     this.ws.onmessage = (event) => {
@@ -254,8 +268,8 @@ class OpenAIRealtimeService {
     console.log('📝 Sending text message via backend proxy:', text);
 
     try {
-      // Use local server proxy instead of separate backend
-      const response = await fetch(`${config.backendUrl}/api/chat/completions`, {
+      // Use appropriate API endpoint based on environment
+      const response = await fetch(config.chatUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

@@ -2,9 +2,26 @@
 // Centralizes access to environment variables with fallbacks
 
 export const config = {
+  // Environment Detection
+  isDevelopment: import.meta.env.DEV,
+  isProduction: import.meta.env.PROD,
+
   // Backend API Configuration
-  backendUrl: import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001',
-  websocketUrl: import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:3001/openai-realtime',
+  get backendUrl() {
+    if (this.isProduction) {
+      // In production (Vercel), use relative URLs for API routes
+      return window.location.origin;
+    }
+    return import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+  },
+
+  get websocketUrl() {
+    if (this.isProduction) {
+      // In production, connect directly to OpenAI (no proxy)
+      return null; // Will use direct OpenAI connection
+    }
+    return import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:3001/openai-realtime';
+  },
 
   // OpenAI Configuration
   openaiApiKey: import.meta.env.VITE_OPENAI_API_KEY || '',
@@ -19,16 +36,18 @@ export const config = {
   // Development Settings
   nodeEnv: import.meta.env.VITE_NODE_ENV || 'development',
   debugMode: import.meta.env.VITE_DEBUG_MODE === 'true',
-  isDevelopment: import.meta.env.DEV,
-  isProduction: import.meta.env.PROD,
   
   // Computed URLs
   get healthCheckUrl() {
-    return `${this.backendUrl}/health`;
+    return `${this.backendUrl}/api/health`;
   },
-  
+
   get sessionUrl() {
     return `${this.backendUrl}/api/session`;
+  },
+
+  get chatUrl() {
+    return `${this.backendUrl}/api/chat`;
   }
 };
 
@@ -56,11 +75,11 @@ export const validateConfig = () => {
 export const logConfig = () => {
   if (config.debugMode && config.isDevelopment) {
     console.group('🔧 Environment Configuration');
+    console.log('Environment:', config.isProduction ? 'Production (Vercel)' : 'Development (Local)');
     console.log('Backend URL:', config.backendUrl);
-    console.log('WebSocket URL:', config.websocketUrl);
+    console.log('WebSocket Mode:', config.websocketUrl ? 'Proxy (Local)' : 'Direct (Production)');
     console.log('Default n8n URL:', config.defaultN8nUrl);
     console.log('App Name:', config.appName);
-    console.log('Environment:', config.nodeEnv);
     console.log('Debug Mode:', config.debugMode);
     console.log('OpenAI API Key:', config.openaiApiKey ? '✅ Auto-loaded from environment' : '❌ Not found in environment');
     console.groupEnd();
