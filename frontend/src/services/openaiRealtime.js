@@ -39,16 +39,31 @@ class OpenAIRealtimeService {
     try {
       // Determine connection method based on environment
       if (config.isProduction || !config.websocketUrl) {
-        // Production: Connect directly to OpenAI
-        console.log("Connecting directly to OpenAI Realtime API...");
-        const wsUrl = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17`;
+        // Production: Connect directly to OpenAI using ephemeral token
+        console.log("Getting ephemeral token for OpenAI Realtime API...");
 
-        this.ws = new WebSocket(wsUrl, [], {
+        // Get ephemeral token from our session API
+        const sessionResponse = await fetch(config.sessionUrl, {
+          method: 'POST',
           headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'OpenAI-Beta': 'realtime=v1'
+            'Content-Type': 'application/json'
           }
         });
+
+        if (!sessionResponse.ok) {
+          throw new Error(`Failed to get session: ${sessionResponse.status}`);
+        }
+
+        const sessionData = await sessionResponse.json();
+        console.log("Got ephemeral token:", sessionData.ephemeral_token.substring(0, 20) + '...');
+
+        // Connect using ephemeral token - OpenAI Realtime API format
+        const wsUrl = `wss://api.openai.com/v1/realtime/sessions/${sessionData.session_id}?model=gpt-4o-realtime-preview-2024-12-17`;
+        console.log("Connecting to OpenAI Realtime API with session:", sessionData.session_id);
+
+        // Use the ephemeral token as a subprotocol
+        this.ws = new WebSocket(wsUrl, [`Bearer.${sessionData.ephemeral_token}`]);
+        this.ephemeralToken = sessionData.ephemeral_token;
       } else {
         // Development: Use local proxy
         console.log("Connecting to OpenAI Realtime API via local WebSocket proxy...");
@@ -68,9 +83,27 @@ class OpenAIRealtimeService {
       this.isConnected = true;
       this.onConnect();
 
-      // After connection, create a session (only for proxy connections)
+      // After connection, create a session
       if (!config.isProduction && config.websocketUrl) {
+        // Development: Use local proxy
         this.createSession();
+      } else {
+        // Production: Send session.update with ephemeral token authentication
+        console.log("Sending session.update for authentication...");
+        this.send({
+          type: 'session.update',
+          session: {
+            model: 'gpt-4o-realtime-preview-2024-12-17',
+            modalities: ['text', 'audio'],
+            instructions: 'You are Air Assist, a helpful voice-controlled AI assistant. Respond naturally and concisely to voice commands. Do not repeat the user\'s name unnecessarily. Focus on being helpful and conversational.',
+            voice: 'alloy',
+            input_audio_format: 'pcm16',
+            output_audio_format: 'pcm16',
+            input_audio_transcription: {
+              model: 'whisper-1'
+            }
+          }
+        });
       }
     };
 
