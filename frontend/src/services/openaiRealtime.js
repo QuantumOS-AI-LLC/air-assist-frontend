@@ -57,12 +57,13 @@ class OpenAIRealtimeService {
         const sessionData = await sessionResponse.json();
         console.log("Got ephemeral token:", sessionData.ephemeral_token.substring(0, 20) + '...');
 
-        // Connect using ephemeral token - OpenAI Realtime API format
-        // Browser WebSocket doesn't support custom headers, so we'll try without subprotocol
-        const wsUrl = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17`;
-        console.log("Connecting to OpenAI Realtime API with ephemeral token:", sessionData.ephemeral_token.substring(0, 20) + '...');
+        // Connect using ephemeral token in URL - OpenAI Realtime API format
+        // Browser WebSocket doesn't support custom headers, so embed token in URL
+        const encodedToken = encodeURIComponent(`Bearer ${sessionData.ephemeral_token}`);
+        const wsUrl = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17&authorization=${encodedToken}`;
+        console.log("Connecting to OpenAI Realtime API with ephemeral token in URL:", sessionData.ephemeral_token.substring(0, 20) + '...');
 
-        // Try connection without subprotocol first (OpenAI may handle auth differently)
+        // Connect with token embedded in URL
         this.ws = new WebSocket(wsUrl);
         this.ephemeralToken = sessionData.ephemeral_token;
       } else {
@@ -89,24 +90,9 @@ class OpenAIRealtimeService {
         // Development: Use local proxy
         this.createSession();
       } else {
-        // Production: Send session.update with correct format
-        console.log("Sending session.update for authentication...");
-        this.send({
-          type: 'session.update',
-          session: {
-            modalities: ['audio', 'text'],
-            instructions: 'You are Air Assist, a helpful voice-controlled AI assistant. Respond naturally and concisely to voice commands. Do not repeat the user\'s name unnecessarily. Focus on being helpful and conversational.',
-            voice: 'alloy',
-            input_audio_format: 'pcm16',
-            output_audio_format: 'pcm16',
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 200
-            }
-          }
-        });
+        // Production: Authentication handled via URL token, wait for session.created event
+        console.log("WebSocket connected with URL authentication. Waiting for session.created event...");
+        // No need to send session.update - authentication is handled by URL token
       }
     };
 
