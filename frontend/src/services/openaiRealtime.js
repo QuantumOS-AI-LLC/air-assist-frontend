@@ -89,19 +89,21 @@ class OpenAIRealtimeService {
         // Development: Use local proxy
         this.createSession();
       } else {
-        // Production: Send session.update with ephemeral token authentication
+        // Production: Send session.update with correct format
         console.log("Sending session.update for authentication...");
         this.send({
           type: 'session.update',
           session: {
-            model: 'gpt-4o-realtime-preview-2024-12-17',
-            modalities: ['text', 'audio'],
+            modalities: ['audio', 'text'],
             instructions: 'You are Air Assist, a helpful voice-controlled AI assistant. Respond naturally and concisely to voice commands. Do not repeat the user\'s name unnecessarily. Focus on being helpful and conversational.',
             voice: 'alloy',
             input_audio_format: 'pcm16',
             output_audio_format: 'pcm16',
-            input_audio_transcription: {
-              model: 'whisper-1'
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 200
             }
           }
         });
