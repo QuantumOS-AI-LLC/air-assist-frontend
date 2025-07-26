@@ -58,15 +58,12 @@ class OpenAIRealtimeService {
         console.log("Got ephemeral token:", sessionData.ephemeral_token.substring(0, 20) + '...');
 
         // Connect using ephemeral token - OpenAI Realtime API format
-        // For browser WebSocket, we need to use the token and beta header in subprotocols
+        // Browser WebSocket doesn't support custom headers, so we'll try without subprotocol
         const wsUrl = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17`;
         console.log("Connecting to OpenAI Realtime API with ephemeral token:", sessionData.ephemeral_token.substring(0, 20) + '...');
 
-        // Use subprotocols to pass both authorization and beta header
-        this.ws = new WebSocket(wsUrl, [
-          `openai-insecure-api-key.${sessionData.ephemeral_token}`,
-          `openai-beta.realtime=v1`
-        ]);
+        // Try connection without subprotocol first (OpenAI may handle auth differently)
+        this.ws = new WebSocket(wsUrl);
         this.ephemeralToken = sessionData.ephemeral_token;
       } else {
         // Development: Use local proxy
