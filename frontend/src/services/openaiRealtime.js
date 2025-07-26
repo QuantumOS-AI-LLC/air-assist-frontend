@@ -103,15 +103,15 @@ class OpenAIRealtimeService {
     };
 
     this.ws.onclose = (event) => {
-      console.log("WebSocket connection closed. Code:", event.code, "Reason:", event.reason);
-
-      // Don't immediately mark as disconnected if it's a normal closure after session creation
       if (event.code === 1000 && this.sessionCreated) {
-        console.log("🔄 Normal closure after session creation, maintaining connection state");
+        console.log("✅ OpenAI session completed successfully (code 1000)");
+        console.log("🔄 This is normal behavior - OpenAI closes after session completion");
+        console.log("🔄 Connection state maintained for future requests");
         // Keep connection state as true since we can reconnect
         return;
       }
 
+      console.log("🔌 WebSocket connection closed. Code:", event.code, "Reason:", event.reason);
       this.isConnected = false;
       this.ws = null;
       this.onDisconnect();
@@ -147,7 +147,7 @@ class OpenAIRealtimeService {
       session: {
         model: options.model || 'gpt-4o-realtime-preview-2024-12-17',
         modalities: options.modalities || ['text', 'audio'],
-        instructions: options.instructions || 'You are a helpful AI assistant.',
+        instructions: options.instructions || 'You are Air Assist, a helpful voice-controlled AI assistant. Respond naturally and concisely to voice commands. Do not repeat the user\'s name unnecessarily. Focus on being helpful and conversational.',
         voice: options.voice || 'alloy',
         input_audio_format: options.input_audio_format || 'pcm16',
         output_audio_format: options.output_audio_format || 'pcm16',
@@ -249,74 +249,58 @@ class OpenAIRealtimeService {
     });
   }
 
-  // Send text message and get response using Chat Completions API (more reliable)
+  // Send text message and get response using Chat Completions API (via backend proxy)
   async sendTextMessage(text, options = {}) {
-    console.log('📝 Sending text message via Chat Completions API:', text);
+    console.log('📝 Sending text message via backend proxy:', text);
 
-    // Try multiple models in order of preference
-    const modelsToTry = [
-      'gpt-4o',
-      'gpt-4',
-      'gpt-3.5-turbo',
-      'gpt-4o-mini'
-    ];
-
-    for (const model of modelsToTry) {
-      try {
-        console.log(`🔍 Trying model: ${model}`);
-
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: [
-              {
-                role: 'user',
-                content: text
-              }
-            ],
-            max_tokens: 1000,
-            temperature: 0.7
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const assistantMessage = data.choices[0]?.message?.content;
-
-          if (assistantMessage) {
-            console.log(`✅ Success with model ${model}:`, assistantMessage);
-
-            // Trigger the message callback to add the response to the chat
-            if (this.onMessage) {
-              this.onMessage({
-                type: 'response.text',
-                text: assistantMessage,
-                role: 'assistant',
-                model: model
-              });
+    try {
+      // Use local server proxy instead of separate backend
+      const response = await fetch(`${config.backendUrl}/api/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'user',
+              content: text
             }
+          ],
+          model: options.model || 'gpt-4o-mini',
+          max_tokens: options.max_tokens || 1000,
+          temperature: options.temperature || 0.7
+        })
+      });
 
-            return assistantMessage;
+      if (response.ok) {
+        const data = await response.json();
+        const assistantMessage = data.choices[0]?.message?.content;
+
+        if (assistantMessage) {
+          console.log('✅ Backend proxy response received:', assistantMessage);
+
+          // Trigger the message callback to add the response to the chat
+          if (this.onMessage) {
+            this.onMessage({
+              type: 'response.text',
+              text: assistantMessage,
+              role: 'assistant',
+              model: data.model || 'gpt-4o-mini'
+            });
           }
-        } else {
-          console.log(`❌ Model ${model} failed: ${response.status} ${response.statusText}`);
-          // Try next model
-          continue;
-        }
-      } catch (error) {
-        console.log(`❌ Error with model ${model}:`, error.message);
-        // Try next model
-        continue;
-      }
-    }
 
-    // If all models failed
-    throw new Error('All OpenAI models failed. Check API key permissions.');
+          return assistantMessage;
+        }
+      } else {
+        const errorData = await response.json();
+        console.error('❌ Backend proxy error:', response.status, errorData);
+        throw new Error(`Backend error: ${errorData.error || response.statusText}`);
+      }
+    } catch (error) {
+      console.error('❌ Error sending message via backend:', error.message);
+      throw new Error(`Failed to send message: ${error.message}`);
+    }
   }
 
   // Send audio message and get response

@@ -5,14 +5,17 @@ export const config = {
   // Backend API Configuration
   backendUrl: import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001',
   websocketUrl: import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:3001/openai-realtime',
-  
+
+  // OpenAI Configuration
+  openaiApiKey: import.meta.env.VITE_OPENAI_API_KEY || '',
+
   // Default n8n Configuration
   defaultN8nUrl: import.meta.env.VITE_DEFAULT_N8N_URL || 'https://n8n.dev.quantumos.ai/webhook/air',
-  
+
   // App Configuration
   appName: import.meta.env.VITE_APP_NAME || 'Air Assist',
   appDescription: import.meta.env.VITE_APP_DESCRIPTION || 'Voice-Controlled PWA with Bluetooth Support',
-  
+
   // Development Settings
   nodeEnv: import.meta.env.VITE_NODE_ENV || 'development',
   debugMode: import.meta.env.VITE_DEBUG_MODE === 'true',
@@ -59,6 +62,7 @@ export const logConfig = () => {
     console.log('App Name:', config.appName);
     console.log('Environment:', config.nodeEnv);
     console.log('Debug Mode:', config.debugMode);
+    console.log('OpenAI API Key:', config.openaiApiKey ? '✅ Auto-loaded from environment' : '❌ Not found in environment');
     console.groupEnd();
   }
 };

@@ -33,61 +33,62 @@ cd backend
 npm install
 ```
 
-### 3. Environment Configuration
+### 3. Serverless Setup
 
-#### Backend Configuration
-
-Create a `.env` file in the `backend` directory:
+Navigate to the frontend directory and install dependencies:
 
 ```bash
-cd backend
-cp .env.example .env
+cd frontend
+npm install
 ```
-
-Edit the `.env` file and add your OpenAI API key:
-
-```env
-OPENAI_API_KEY=your_openai_api_key_here
-PORT=3001
-NODE_ENV=development
-```
-
-#### Frontend Configuration
 
 Create a `.env` file in the `frontend` directory:
 
 ```bash
-cd frontend
 cp .env.example .env
 ```
 
-Edit the `.env` file to configure your endpoints:
+Edit the `.env` file and add your OpenAI API key and configure endpoints:
 
 ```env
+# OpenAI API Configuration
+VITE_OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Server Configuration
+PORT=3001
+NODE_ENV=development
+
+# API Configuration
 VITE_BACKEND_URL=http://localhost:3001
 VITE_WEBSOCKET_URL=ws://localhost:3001/openai-realtime
+
+# n8n Configuration
 VITE_DEFAULT_N8N_URL=https://your-n8n-instance.com/webhook/air
+
+# App Configuration
 VITE_APP_NAME=Air Assist
 VITE_DEBUG_MODE=true
 ```
 
 **Important**: Never commit your `.env` files to version control. They're already included in `.gitignore`.
 
-### 4. Frontend Setup
-
-```bash
-cd ../frontend
-npm install
-```
-
-### 5. Running the Application
+### 4. Running the Application
 
 #### Development Mode
 
-Start the backend server:
+Start the serverless server and frontend development server:
 ```bash
-cd backend
-npm run dev
+cd frontend
+npm run dev:full
+```
+
+Or run them separately:
+
+Start the serverless server:
+```bash
+cd frontend
+npm run server:dev
 ```
 
 In a new terminal, start the frontend:
@@ -98,15 +99,16 @@ npm run dev
 
 The application will be available at:
 - Frontend: http://localhost:5173
-- Backend: http://localhost:3001
+- Serverless API: http://localhost:3001
 
 #### Production Build
 
 ```bash
 cd frontend
-npm run build
-npm run preview
+npm run start
 ```
+
+This will build the frontend and start the serverless server serving the built files.
 
 ## Configuration
 

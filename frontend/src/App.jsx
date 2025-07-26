@@ -26,8 +26,21 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [error, setError] = useState('')
   const [speechSupported, setSpeechSupported] = useState(true)
+  const [lastCommand, setLastCommand] = useState('')
+  const [lastCommandTime, setLastCommandTime] = useState(0)
   const [openaiApiKey, setOpenaiApiKey] = useState(() => {
-    return localStorage.getItem('openai_api_key') || ''
+    // Priority: localStorage > environment variable > empty string
+    const storedKey = localStorage.getItem('openai_api_key');
+    if (storedKey) {
+      return storedKey;
+    }
+    // Auto-populate from environment variable if available
+    if (config.openaiApiKey) {
+      // Store it in localStorage for persistence
+      localStorage.setItem('openai_api_key', config.openaiApiKey);
+      return config.openaiApiKey;
+    }
+    return '';
   })
   const [useOpenAI, setUseOpenAI] = useState(() => {
     const stored = localStorage.getItem('use_openai')
@@ -91,9 +104,10 @@ function App() {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
       recognitionRef.current = new SpeechRecognition()
-      recognitionRef.current.continuous = true
-      recognitionRef.current.interimResults = true
+      recognitionRef.current.continuous = false  // Changed to false to prevent continuous listening
+      recognitionRef.current.interimResults = false  // Changed to false to only get final results
       recognitionRef.current.lang = 'en-US'
+      recognitionRef.current.maxAlternatives = 1
 
       recognitionRef.current.onresult = (event) => {
         let finalTranscript = ''
@@ -103,6 +117,23 @@ function App() {
           }
         }
         if (finalTranscript) {
+          const trimmedCommand = finalTranscript.trim().toLowerCase()
+          const now = Date.now()
+
+          // Prevent duplicate commands within 3 seconds
+          if (trimmedCommand === lastCommand.toLowerCase() && (now - lastCommandTime) < 3000) {
+            console.log('🚫 Ignoring duplicate command:', trimmedCommand)
+            return
+          }
+
+          // Ignore very short commands (likely noise)
+          if (trimmedCommand.length < 3) {
+            console.log('🚫 Ignoring short command:', trimmedCommand)
+            return
+          }
+
+          setLastCommand(finalTranscript.trim())
+          setLastCommandTime(now)
           addMessage(finalTranscript, 'user')
           processVoiceCommand(finalTranscript)
         }
@@ -116,6 +147,19 @@ function App() {
 
       recognitionRef.current.onend = () => {
         setIsListening(false)
+        // Auto-restart listening if it was manually started and not stopped by user
+        if (isListening && !isProcessing) {
+          setTimeout(() => {
+            if (recognitionRef.current && !isProcessing) {
+              try {
+                recognitionRef.current.start()
+                setIsListening(true)
+              } catch (e) {
+                console.log('Speech recognition restart failed:', e.message)
+              }
+            }
+          }, 1000) // Wait 1 second before restarting
+        }
       }
     } else {
       setSpeechSupported(false)
@@ -137,10 +181,10 @@ function App() {
     }
   }, [n8nUrl]) // Remove useOpenAI from dependencies to prevent auto-reconnection
 
-  // Auto-connect to OpenAI only when switching to OpenAI mode
+  // Auto-connect to OpenAI when API key is available from environment or when switching to OpenAI mode
   useEffect(() => {
     if (useOpenAI && !isOpenAIConnected && openaiApiKey && localStorage.getItem('use_openai') === 'true') {
-      console.log('🔄 Auto-connecting to OpenAI due to provider switch')
+      console.log('🔄 Auto-connecting to OpenAI due to provider switch or auto-populated API key')
       // Ensure n8n is disconnected first
       setIsN8nConnected(false)
       localStorage.setItem('n8n_connected', 'false')
@@ -151,7 +195,18 @@ function App() {
         }
       }, 100)
     }
-  }, [useOpenAI]) // Only depend on useOpenAI to prevent cascading effects
+  }, [useOpenAI, openaiApiKey]) // Depend on both useOpenAI and openaiApiKey for auto-connection
+
+  // Initial auto-connection when component mounts with environment API key
+  useEffect(() => {
+    // Only auto-connect if we have an API key from environment and OpenAI mode is selected
+    if (config.openaiApiKey && useOpenAI && !isOpenAIConnected && !localStorage.getItem('openai_connected')) {
+      console.log('🚀 Auto-connecting to OpenAI with environment API key on startup')
+      setTimeout(() => {
+        connectOpenAI(openaiApiKey)
+      }, 500) // Small delay to ensure all state is initialized
+    }
+  }, []) // Run only once on mount
 
   // Monitor and fix connection state synchronization
   useEffect(() => {
@@ -225,6 +280,11 @@ function App() {
   const processVoiceCommand = async (command) => {
     setIsProcessing(true)
 
+    // Stop listening while processing to avoid interference
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop()
+    }
+
     // Debug logging to understand the routing decision
     console.log('🎯 Processing voice command:', command)
     console.log('🔧 useOpenAI:', useOpenAI)
@@ -297,6 +357,18 @@ function App() {
       }
     } finally {
       setIsProcessing(false)
+
+      // Restart listening after processing if it was active
+      setTimeout(() => {
+        if (!isListening && recognitionRef.current) {
+          try {
+            recognitionRef.current.start()
+            setIsListening(true)
+          } catch (e) {
+            console.log('Failed to restart listening:', e.message)
+          }
+        }
+      }, 500)
     }
   }
 
@@ -647,13 +719,24 @@ function App() {
                 <div className="settings-section" key="openai-settings">
                   <h3>OpenAI Realtime Configuration</h3>
                   <div className="input-group">
-                    <label htmlFor="openai-key">OpenAI API Key:</label>
+                    <label htmlFor="openai-key">
+                      OpenAI API Key:
+                      {config.openaiApiKey && (
+                        <span className="auto-populated-indicator" title="Auto-populated from environment variable">
+                          🔧 Auto
+                        </span>
+                      )}
+                    </label>
                     <input
                       id="openai-key"
                       type="password"
                       value={openaiApiKey}
-                      onChange={(e) => setOpenaiApiKey(e.target.value)}
-                      placeholder="sk-..."
+                      onChange={(e) => {
+                        setOpenaiApiKey(e.target.value);
+                        // Update localStorage when manually changed
+                        localStorage.setItem('openai_api_key', e.target.value);
+                      }}
+                      placeholder={config.openaiApiKey ? "Auto-populated from .env" : "sk-..."}
                     />
                     <button
                       onClick={() => {

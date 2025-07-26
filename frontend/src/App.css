@@ -652,6 +652,26 @@ body {
   color: #ecf0f1;
   font-size: 0.9rem;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auto-populated-indicator {
+  background: #27ae60;
+  color: #ffffff;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: help;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
 }
 
 .input-group input {

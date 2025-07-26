@@ -1,11 +1,22 @@
 // Load environment variables
 require('dotenv').config();
 
+/**
+ * OpenAI Realtime API WebSocket Proxy Server - Serverless Frontend Version
+ *
+ * IMPORTANT: OpenAI Realtime API behavior:
+ * - OpenAI closes WebSocket connections after session completion (normal behavior)
+ * - Code 1000 closures are expected and indicate successful session completion
+ * - Audio data is sent as binary messages before connection closes
+ * - This proxy keeps client connections open for reconnection
+ */
+
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
 const WebSocket = require('ws');
 const http = require('http');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -20,12 +31,12 @@ app.use(cors({
 app.use(express.json());
 
 // OpenAI API Key from environment variables
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_KEY = process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
 
 // Validate required environment variables
 if (!OPENAI_API_KEY) {
   console.error('❌ OPENAI_API_KEY environment variable is required');
-  console.error('Please create a .env file in the backend directory with your OpenAI API key');
+  console.error('Please add VITE_OPENAI_API_KEY or OPENAI_API_KEY to your .env file');
   process.exit(1);
 }
 
@@ -81,9 +92,64 @@ app.post('/api/session', async (req, res) => {
   }
 });
 
+// Chat completions endpoint (proxy for frontend)
+app.post('/api/chat/completions', async (req, res) => {
+  try {
+    console.log('📝 Chat completions request received');
+
+    const { messages, model = 'gpt-4o-mini', max_tokens = 1000, temperature = 0.7 } = req.body;
+
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'Messages array is required'
+      });
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens,
+        temperature
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenAI Chat API Error:', response.status, errorText);
+      return res.status(response.status).json({
+        error: 'OpenAI API error',
+        details: errorText
+      });
+    }
+
+    const data = await response.json();
+    console.log('✅ Chat completions response sent');
+    res.json(data);
+
+  } catch (error) {
+    console.error('Error in chat completions:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error.message
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Basic root route
+app.get('/', (req, res) => {
+  res.json({ message: 'Air Assist Serverless Server is running!', status: 'OK' });
 });
 
 // Create WebSocket server for OpenAI Realtime API proxy
@@ -153,7 +219,7 @@ wss.on('connection', (clientWs, request) => {
         openaiWs.on('message', (openaiMessage, isBinary) => {
           try {
             if (isBinary || Buffer.isBuffer(openaiMessage)) {
-              console.log('📥 OpenAI binary message (audio data)', openaiMessage.length, 'bytes');
+              console.log('🎵 OpenAI audio response received:', openaiMessage.length, 'bytes');
               // Forward binary message with proper binary flag
               if (clientWs.readyState === WebSocket.OPEN) {
                 clientWs.send(openaiMessage, { binary: true });
@@ -163,9 +229,9 @@ wss.on('connection', (clientWs, request) => {
               const messageStr = openaiMessage.toString();
               try {
                 const messageData = JSON.parse(messageStr);
-                console.log('📥 OpenAI text message:', messageData.type);
+                console.log('📥 OpenAI response:', messageData.type);
               } catch (parseError) {
-                console.log('📥 OpenAI text message (non-JSON):', messageStr.substring(0, 100));
+                console.log('📥 OpenAI text response (non-JSON):', messageStr.substring(0, 100));
               }
               // Forward text message to client
               if (clientWs.readyState === WebSocket.OPEN) {
@@ -196,10 +262,16 @@ wss.on('connection', (clientWs, request) => {
         });
 
         openaiWs.on('close', (code, reason) => {
-          console.log('🔌 OpenAI WebSocket closed:', code, reason.toString());
+          const reasonStr = reason.toString();
+          if (code === 1000) {
+            console.log('✅ OpenAI WebSocket closed normally (code 1000):', reasonStr || 'Session completed');
+            console.log('🔄 This is expected behavior - OpenAI closes after session completion');
+          } else {
+            console.log('🔌 OpenAI WebSocket closed with code:', code, reasonStr);
+          }
           openaiWs = null;
           // Don't close client connection - let it stay open for reconnection
-          console.log('🔄 OpenAI connection closed, but keeping client connection open for reconnection');
+          console.log('🔄 Client connection remains open for future requests');
         });
 
       } else if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
@@ -247,7 +319,7 @@ wss.on('connection', (clientWs, request) => {
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`🚀 Backend server running on http://localhost:${PORT}`);
+  console.log(`🚀 Serverless server running on http://localhost:${PORT}`);
   console.log(`📡 OpenAI Realtime API proxy ready`);
   console.log(`🔌 WebSocket proxy available at ws://localhost:${PORT}/openai-realtime`);
 });
