@@ -146,20 +146,10 @@ function App() {
       }
 
       recognitionRef.current.onend = () => {
+        console.log('🎤 Speech recognition ended. isListening:', isListening, 'isProcessing:', isProcessing)
         setIsListening(false)
-        // Auto-restart listening if it was manually started and not stopped by user
-        if (isListening && !isProcessing) {
-          setTimeout(() => {
-            if (recognitionRef.current && !isProcessing) {
-              try {
-                recognitionRef.current.start()
-                setIsListening(true)
-              } catch (e) {
-                console.log('Speech recognition restart failed:', e.message)
-              }
-            }
-          }, 1000) // Wait 1 second before restarting
-        }
+        // Don't auto-restart - let the processVoiceCommand function handle restarting
+        // This prevents duplicate processing of the same command
       }
     } else {
       setSpeechSupported(false)
