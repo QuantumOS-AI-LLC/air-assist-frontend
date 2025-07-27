@@ -247,9 +247,26 @@ body {
   box-shadow: 0 0 8px rgba(39, 174, 96, 0.5);
 }
 
+.status-indicator.connecting {
+  background: #4299e1;
+  box-shadow: 0 0 8px rgba(66, 153, 225, 0.5);
+  animation: pulse-connecting 1.5s infinite;
+}
+
 .status-indicator.disconnected {
   background: #e74c3c;
   box-shadow: 0 0 8px rgba(231, 76, 60, 0.5);
+}
+
+@keyframes pulse-connecting {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
 }
 
 .connect-devices-btn {
@@ -275,6 +292,38 @@ body {
   background: #38a169;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(72, 187, 120, 0.3);
+}
+
+.connect-devices-btn:disabled {
+  background: #68d391;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.connect-devices-btn.scanning {
+  background: #4299e1;
+  animation: pulse-scanning 1.5s infinite;
+}
+
+.scanning-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes pulse-scanning {
+  0%, 100% {
+    background: #4299e1;
+    box-shadow: 0 4px 12px rgba(66, 153, 225, 0.3);
+  }
+  50% {
+    background: #3182ce;
+    box-shadow: 0 6px 20px rgba(66, 153, 225, 0.5);
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* Chat Container */

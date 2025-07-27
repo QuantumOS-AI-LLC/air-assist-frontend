@@ -8,6 +8,7 @@ function App() {
   const [isListening, setIsListening] = useState(false)
   const [bluetoothDevice, setBluetoothDevice] = useState(null)
   const [isBluetoothConnected, setIsBluetoothConnected] = useState(false)
+  const [isBluetoothScanning, setIsBluetoothScanning] = useState(false)
   const [isN8nConnected, setIsN8nConnected] = useState(false)
   const [n8nUrl, setN8nUrl] = useState(() => {
     return localStorage.getItem('n8n_url') || config.defaultN8nUrl
@@ -449,27 +450,173 @@ function App() {
   const connectBluetooth = async () => {
     try {
       if (!navigator.bluetooth) {
-        alert('Bluetooth is not supported in this browser')
+        alert('❌ Bluetooth is not supported in this browser.\n\nPlease use Chrome, Edge, or another Chromium-based browser.')
         return
       }
 
-      const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: ['generic_access', 'generic_attribute']
-      })
+      setIsBluetoothScanning(true)
+      console.log('🔍 Starting Bluetooth device scan for audio devices...')
 
-      await device.gatt.connect()
+      // Define audio device filters
+      const audioDeviceFilters = [
+        // Try specific audio services first
+        {
+          services: ['0000110b-0000-1000-8000-00805f9b34fb'] // Audio Sink (A2DP)
+        },
+        {
+          services: ['0000111e-0000-1000-8000-00805f9b34fb'] // Hands-Free Profile
+        },
+        {
+          services: ['00001108-0000-1000-8000-00805f9b34fb'] // Headset Profile
+        },
+        // Fallback to name-based filtering for common audio devices
+        {
+          namePrefix: 'AirPods'
+        },
+        {
+          namePrefix: 'Sony'
+        },
+        {
+          namePrefix: 'Bose'
+        },
+        {
+          namePrefix: 'JBL'
+        },
+        {
+          namePrefix: 'Beats'
+        },
+        {
+          namePrefix: 'Sennheiser'
+        },
+        {
+          namePrefix: 'Audio'
+        },
+        {
+          namePrefix: 'Headphone'
+        },
+        {
+          namePrefix: 'Headset'
+        },
+        {
+          namePrefix: 'Earbuds'
+        },
+        {
+          namePrefix: 'Speaker'
+        }
+      ]
+
+      let device = null
+      let lastError = null
+
+      // Try each filter until we find devices or exhaust all options
+      for (const filter of audioDeviceFilters) {
+        try {
+          console.log('🔍 Trying filter:', filter)
+
+          const requestOptions = {
+            filters: [filter],
+            optionalServices: [
+              'generic_access',
+              'generic_attribute',
+              'device_information',
+              '0000110b-0000-1000-8000-00805f9b34fb', // Audio Sink
+              '0000111e-0000-1000-8000-00805f9b34fb', // Hands-Free
+              '00001108-0000-1000-8000-00805f9b34fb'  // Headset
+            ]
+          }
+
+          device = await navigator.bluetooth.requestDevice(requestOptions)
+          console.log('✅ Found device:', device.name || 'Unknown Device')
+          break // Success! Exit the loop
+
+        } catch (filterError) {
+          console.log('⚠️ Filter failed:', filter, filterError.message)
+          lastError = filterError
+
+          // If user cancelled, don't try more filters
+          if (filterError.name === 'NotFoundError' && filterError.message.includes('User cancelled')) {
+            throw filterError
+          }
+          continue // Try next filter
+        }
+      }
+
+      // If no device found with any filter, try acceptAllDevices as last resort
+      if (!device) {
+        console.log('🔍 No audio devices found, trying all devices...')
+        try {
+          device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: [
+              'generic_access',
+              'generic_attribute',
+              'device_information',
+              '0000110b-0000-1000-8000-00805f9b34fb',
+              '0000111e-0000-1000-8000-00805f9b34fb',
+              '00001108-0000-1000-8000-00805f9b34fb'
+            ]
+          })
+        } catch (allDevicesError) {
+          throw lastError || allDevicesError
+        }
+      }
+
+      if (!device) {
+        throw new Error('No Bluetooth devices found')
+      }
+
+      console.log('🔗 Connecting to device:', device.name || 'Unknown Device')
+
+      // Connect to the device
+      const server = await device.gatt.connect()
+      console.log('✅ Connected to GATT server')
+
       setBluetoothDevice(device)
       setIsBluetoothConnected(true)
 
+      // Set up disconnect handler
       device.addEventListener('gattserverdisconnected', () => {
+        console.log('📱 Bluetooth device disconnected')
         setIsBluetoothConnected(false)
         setBluetoothDevice(null)
+        addMessage(`Bluetooth device "${device.name || 'Unknown Device'}" disconnected`, 'assistant')
       })
 
+      addMessage(`✅ Connected to Bluetooth device: "${device.name || 'Unknown Device'}"`, 'assistant')
+
     } catch (error) {
-      console.error('Bluetooth connection failed:', error)
-      alert('Failed to connect to Bluetooth device: ' + error.message)
+      console.error('❌ Bluetooth connection failed:', error)
+
+      let errorMessage = 'Failed to connect to Bluetooth device.'
+
+      if (error.name === 'NotFoundError') {
+        if (error.message.includes('User cancelled')) {
+          errorMessage = 'Bluetooth pairing was cancelled.'
+        } else {
+          errorMessage = `No Bluetooth audio devices found.
+
+📱 To connect your audio device:
+
+1. Put your headphones/earbuds in PAIRING mode
+2. Make sure they're not connected to other devices
+3. Try again - they should appear in the list
+
+💡 Tip: If your device is already paired with your computer, you may need to disconnect it first, then put it in pairing mode.`
+        }
+      } else if (error.name === 'SecurityError') {
+        errorMessage = 'Bluetooth access denied. Please allow Bluetooth permissions and try again.'
+      } else if (error.name === 'NotSupportedError') {
+        errorMessage = 'This Bluetooth device is not supported for audio connections.'
+      } else {
+        errorMessage = `Bluetooth Error: ${error.message}
+
+💡 Try putting your audio device in pairing mode and try again.`
+      }
+
+      alert(errorMessage)
+      addMessage(`❌ Bluetooth connection failed: ${error.message}`, 'assistant')
+    } finally {
+      setIsBluetoothScanning(false)
     }
   }
 
@@ -506,8 +653,8 @@ function App() {
       {/* Status Bar */}
       <div className="status-bar">
         <div className="status-item">
-          <span className={`status-indicator ${isBluetoothConnected ? 'connected' : 'disconnected'}`}></span>
-          Bluetooth: {isBluetoothConnected ? 'Connected' : 'Disconnected'}
+          <span className={`status-indicator ${isBluetoothConnected ? 'connected' : isBluetoothScanning ? 'connecting' : 'disconnected'}`}></span>
+          Bluetooth: {isBluetoothConnected ? 'Connected' : isBluetoothScanning ? 'Scanning...' : 'Disconnected'}
         </div>
         <div className="status-item">
           <span className={`status-indicator ${isOpenAIConnected ? 'connected' : 'disconnected'}`}></span>
@@ -517,11 +664,26 @@ function App() {
           <span className={`status-indicator ${isN8nConnected ? 'connected' : 'disconnected'}`}></span>
           n8n: {isN8nConnected ? 'Connected' : 'Disconnected'}
         </div>
-        <button className="connect-devices-btn" onClick={connectBluetooth}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M17.71,7.71L12,2H11V9.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L11,14.41V22H12L17.71,16.29L13.41,12L17.71,7.71Z M13,5.83L15.17,8L13,10.17V5.83Z M13,13.83L15.17,16L13,18.17V13.83Z"/>
-          </svg>
-          Connect Devices
+        <button
+          className={`connect-devices-btn ${isBluetoothScanning ? 'scanning' : ''}`}
+          onClick={connectBluetooth}
+          disabled={isBluetoothScanning}
+        >
+          {isBluetoothScanning ? (
+            <>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="scanning-icon">
+                <path d="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z"/>
+              </svg>
+              Scanning...
+            </>
+          ) : (
+            <>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.71,7.71L12,2H11V9.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L11,14.41V22H12L17.71,16.29L13.41,12L17.71,7.71Z M13,5.83L15.17,8L13,10.17V5.83Z M13,13.83L15.17,16L13,18.17V13.83Z"/>
+              </svg>
+              Connect Devices
+            </>
+          )}
         </button>
       </div>
 
@@ -581,7 +743,14 @@ function App() {
               </div>
               <div className="help-section">
                 <h3>📱 Bluetooth Connection</h3>
-                <p>Connect your Bluetooth earpiece for hands-free operation. Click &ldquo;Connect Devices&rdquo; to pair.</p>
+                <p>Connect your Bluetooth audio devices for hands-free operation:</p>
+                <ol>
+                  <li><strong>Put your device in pairing mode</strong> (headphones, earbuds, speakers)</li>
+                  <li><strong>Click "Connect Devices"</strong> to start scanning</li>
+                  <li><strong>Select your device</strong> from the list that appears</li>
+                </ol>
+                <p><strong>💡 Tip:</strong> If your device doesn't appear, make sure it's in pairing mode and not connected to other devices.</p>
+                <p><strong>🎧 Supported devices:</strong> AirPods, Sony, Bose, JBL, Beats, and most Bluetooth audio devices.</p>
               </div>
               <div className="help-section">
                 <h3>🔗 n8n Integration</h3>
