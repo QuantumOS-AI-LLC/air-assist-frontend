@@ -134,7 +134,7 @@ function App() {
 
           setLastCommand(finalTranscript.trim())
           setLastCommandTime(now)
-          addMessage(finalTranscript, 'user')
+          // Remove duplicate addMessage call - sendTextMessage will handle adding the user message
           processVoiceCommand(finalTranscript)
         }
       }
@@ -321,6 +321,9 @@ function App() {
       } else {
         // Send to n8n webhook directly
         console.log('📤 Sending to n8n:', command)
+        // Add user message to chat for n8n path
+        addMessage(command, 'user')
+
         const response = await fetch(n8nUrl, {
           method: 'POST',
           headers: {
