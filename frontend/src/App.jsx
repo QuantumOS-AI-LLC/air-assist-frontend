@@ -751,15 +751,13 @@ function App() {
           }
           console.log('🍎 Using iOS-optimized audio constraints')
         } else if (isAndroid) {
-          // Android: Try device-specific first, fallback to system default
+          // Android: Use system default routing (like iOS) for better Bluetooth compatibility
           audioConstraints = {
-            deviceId: inputDevice.deviceId ? { ideal: inputDevice.deviceId } : undefined,
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true,
-            sampleRate: { ideal: 44100, min: 16000 }
+            autoGainControl: true
           }
-          console.log('🤖 Using Android-optimized audio constraints')
+          console.log('🤖 Using Android system default audio routing (like iOS)')
         } else {
           // Other mobile devices
           audioConstraints = {
@@ -794,12 +792,19 @@ function App() {
 
       if (inputDevice.isBluetooth) {
         if (isMobile) {
-          addMessage(`✅ Bluetooth microphone setup attempted: ${inputDevice.label}.
+          if (isIOS) {
+            addMessage(`✅ Bluetooth microphone connected: ${inputDevice.label}.
 
-📱 Mobile Note: If voice input doesn't work, please:
-${isIOS ? '🍎 iOS: Go to Settings → Bluetooth → Your device → Enable "Use for Audio"' : ''}
-${isAndroid ? '🤖 Android: Ensure Bluetooth device is set as default in Sound settings' : ''}
-${!isPWA ? '💡 Install this app for better Bluetooth support' : ''}`, 'assistant')
+🍎 iOS: Using system audio routing. Voice input should work if your Bluetooth device is set as default in iOS Settings.`, 'assistant')
+          } else if (isAndroid) {
+            addMessage(`✅ Bluetooth microphone connected: ${inputDevice.label}.
+
+🤖 Android: Using system audio routing. Voice input should work if your Bluetooth device is set as default in Android Sound settings.
+
+💡 Tip: Make sure your Bluetooth device is selected for "Phone calls" and "Media audio" in Bluetooth settings.`, 'assistant')
+          } else {
+            addMessage(`✅ Bluetooth microphone connected: ${inputDevice.label}. Using system audio routing.`, 'assistant')
+          }
         } else {
           addMessage(`✅ Bluetooth microphone connected: ${inputDevice.label}. Voice input is now active!`, 'assistant')
         }
@@ -829,15 +834,16 @@ ${!isPWA ? '💡 Install this app for better Bluetooth support' : ''}`, 'assista
           let fallbackConstraints
 
           if (isMobile) {
-            // Mobile fallback: Use system default audio routing
+            // Mobile fallback: Use system default audio routing (works for both iOS and Android)
             fallbackConstraints = {
               audio: {
                 echoCancellation: true,
-                noiseSuppression: true
+                noiseSuppression: true,
+                autoGainControl: true
               },
               video: false
             }
-            console.log('📱 Using mobile fallback constraints')
+            console.log('📱 Using mobile system default fallback (iOS/Android compatible)')
           } else {
             // Desktop fallback: Try with device ID only
             fallbackConstraints = {
@@ -1152,13 +1158,14 @@ ${!isPWA ? '💡 Install this app for better Bluetooth support' : ''}`, 'assista
                       <p><strong>🍎 iOS Note:</strong> Safari has limited Bluetooth API support. Installing as PWA provides better audio access.</p>
                     ) : isAndroid ? (
                       <ol>
-                        <li>🤖 <strong>Pair Device:</strong> Settings → Connected devices → Bluetooth → Add your device</li>
-                        <li>🤖 <strong>Audio Settings:</strong> Settings → Sound → Advanced → Set Bluetooth device for calls and media</li>
-                        <li>🤖 <strong>Codec Settings:</strong> Developer options → Bluetooth Audio Codec (if available)</li>
+                        <li>🤖 <strong>Pair Device:</strong> Settings → Connected devices → Bluetooth → Connect your headphones</li>
+                        <li>🤖 <strong>Enable Audio:</strong> Tap gear icon next to device → Enable "Phone calls" and "Media audio"</li>
+                        <li>🤖 <strong>Set as Default:</strong> Settings → Sound → Advanced → Make sure Bluetooth device is default</li>
+                        <li>🤖 <strong>Chrome Permissions:</strong> Allow microphone access when prompted</li>
                         <li>📲 <strong>Install App:</strong> Add to Home Screen for better performance</li>
                         <li>🎤 <strong>Test Voice:</strong> Use Settings → Audio Device Selection → Test Microphone</li>
                       </ol>
-                      <p><strong>🤖 Android Note:</strong> Chrome provides better Bluetooth support than other mobile browsers.</p>
+                      <p><strong>🤖 Android Note:</strong> App uses system audio routing. Ensure your Bluetooth device is set as default for calls and media.</p>
                     ) : (
                       <ol>
                         <li>📱 <strong>Pair Device:</strong> Connect your Bluetooth headphones in device settings</li>
