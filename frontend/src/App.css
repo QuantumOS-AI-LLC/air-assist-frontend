@@ -1607,3 +1607,68 @@ body {
   font-size: 13px;
   line-height: 1.4;
 }
+
+/* Mobile-specific styles */
+.pwa-section {
+  background: rgba(156, 39, 176, 0.1);
+  border: 1px solid rgba(156, 39, 176, 0.3);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.pwa-section h3 {
+  color: #9C27B0;
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.pwa-section p {
+  color: #e0e0e0;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.pwa-section ol {
+  color: #e0e0e0;
+  padding-left: 20px;
+  margin-bottom: 12px;
+}
+
+.pwa-section li {
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  .microphone-test-section {
+    padding: 12px;
+  }
+
+  .mic-test-controls {
+    gap: 8px;
+  }
+
+  .audio-level-indicator {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .level-bar {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .bluetooth-mic-tips {
+    padding: 10px;
+  }
+
+  .bluetooth-mic-tips li {
+    font-size: 12px;
+  }
+
+  .pwa-section {
+    padding: 12px;
+  }
+}

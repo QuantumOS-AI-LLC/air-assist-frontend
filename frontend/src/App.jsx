@@ -19,6 +19,10 @@ function App() {
   const [audioContext, setAudioContext] = useState(null)
   const [isMicrophoneTesting, setIsMicrophoneTesting] = useState(false)
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
+  const [isMobile, setIsMobile] = useState(false)
+  const [isIOS, setIsIOS] = useState(false)
+  const [isAndroid, setIsAndroid] = useState(false)
+  const [isPWA, setIsPWA] = useState(false)
   const [isN8nConnected, setIsN8nConnected] = useState(false)
   const [n8nUrl, setN8nUrl] = useState(() => {
     return localStorage.getItem('n8n_url') || config.defaultN8nUrl
@@ -109,6 +113,28 @@ function App() {
       })
     }
   }, [openAIMessages, useOpenAI])
+
+  // Mobile and platform detection
+  useEffect(() => {
+    const detectMobile = () => {
+      const userAgent = navigator.userAgent || navigator.vendor || window.opera
+      const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)
+      const ios = /iPad|iPhone|iPod/.test(userAgent)
+      const android = /Android/i.test(userAgent)
+      const pwa = window.matchMedia('(display-mode: standalone)').matches ||
+                  window.navigator.standalone === true ||
+                  document.referrer.includes('android-app://')
+
+      setIsMobile(mobile)
+      setIsIOS(ios)
+      setIsAndroid(android)
+      setIsPWA(pwa)
+
+      console.log('📱 Platform Detection:', { mobile, ios, android, pwa })
+    }
+
+    detectMobile()
+  }, [])
 
   // Initialize Speech Recognition
   useEffect(() => {
@@ -709,14 +735,50 @@ function App() {
       }
 
       console.log('🎤 Setting up microphone with device:', inputDevice.label)
+      console.log('📱 Platform info:', { isMobile, isIOS, isAndroid, isPWA })
 
-      // Create audio constraints for the specific device
-      const audioConstraints = {
-        deviceId: inputDevice.deviceId ? { exact: inputDevice.deviceId } : undefined,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        sampleRate: 44100
+      // Create audio constraints based on platform
+      let audioConstraints
+
+      if (isMobile) {
+        // Mobile-specific constraints for better Bluetooth compatibility
+        if (isIOS) {
+          // iOS: Use minimal constraints, let system handle Bluetooth routing
+          audioConstraints = {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+          console.log('🍎 Using iOS-optimized audio constraints')
+        } else if (isAndroid) {
+          // Android: Try device-specific first, fallback to system default
+          audioConstraints = {
+            deviceId: inputDevice.deviceId ? { ideal: inputDevice.deviceId } : undefined,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: { ideal: 44100, min: 16000 }
+          }
+          console.log('🤖 Using Android-optimized audio constraints')
+        } else {
+          // Other mobile devices
+          audioConstraints = {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+          console.log('📱 Using mobile-optimized audio constraints')
+        }
+      } else {
+        // Desktop: Use exact device constraints
+        audioConstraints = {
+          deviceId: inputDevice.deviceId ? { exact: inputDevice.deviceId } : undefined,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 44100
+        }
+        console.log('💻 Using desktop audio constraints')
       }
 
       console.log('🎤 Audio constraints:', audioConstraints)
@@ -731,7 +793,16 @@ function App() {
       console.log('✅ Microphone access granted for device:', inputDevice.label)
 
       if (inputDevice.isBluetooth) {
-        addMessage(`✅ Bluetooth microphone connected: ${inputDevice.label}. Voice input is now active!`, 'assistant')
+        if (isMobile) {
+          addMessage(`✅ Bluetooth microphone setup attempted: ${inputDevice.label}.
+
+📱 Mobile Note: If voice input doesn't work, please:
+${isIOS ? '🍎 iOS: Go to Settings → Bluetooth → Your device → Enable "Use for Audio"' : ''}
+${isAndroid ? '🤖 Android: Ensure Bluetooth device is set as default in Sound settings' : ''}
+${!isPWA ? '💡 Install this app for better Bluetooth support' : ''}`, 'assistant')
+        } else {
+          addMessage(`✅ Bluetooth microphone connected: ${inputDevice.label}. Voice input is now active!`, 'assistant')
+        }
       } else {
         addMessage(`✅ Microphone connected: ${inputDevice.label}`, 'assistant')
       }
@@ -753,15 +824,40 @@ function App() {
       } else if (error.name === 'OverconstrainedError') {
         errorMessage = `Microphone constraints not supported. Trying with basic settings...`
 
-        // Fallback with basic constraints
+        // Mobile-specific fallback strategies
         try {
-          const fallbackStream = await navigator.mediaDevices.getUserMedia({
-            audio: { deviceId: inputDevice.deviceId },
-            video: false
-          })
+          let fallbackConstraints
+
+          if (isMobile) {
+            // Mobile fallback: Use system default audio routing
+            fallbackConstraints = {
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true
+              },
+              video: false
+            }
+            console.log('📱 Using mobile fallback constraints')
+          } else {
+            // Desktop fallback: Try with device ID only
+            fallbackConstraints = {
+              audio: { deviceId: inputDevice.deviceId },
+              video: false
+            }
+            console.log('💻 Using desktop fallback constraints')
+          }
+
+          const fallbackStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints)
           setCurrentMediaStream(fallbackStream)
           setupAudioLevelMonitoring(fallbackStream)
-          addMessage(`✅ Microphone connected with basic settings: ${inputDevice.label}`, 'assistant')
+
+          if (isMobile && inputDevice.isBluetooth) {
+            addMessage(`✅ Microphone connected with basic settings: ${inputDevice.label}
+
+📱 Mobile Bluetooth Note: The browser is using system audio routing. Make sure your Bluetooth device is set as the default audio input in your phone's settings.`, 'assistant')
+          } else {
+            addMessage(`✅ Microphone connected with basic settings: ${inputDevice.label}`, 'assistant')
+          }
           return fallbackStream
         } catch (fallbackError) {
           console.error('❌ Fallback microphone setup failed:', fallbackError)
@@ -1042,14 +1138,49 @@ function App() {
               </div>
               <div className="help-section">
                 <h3>🎧 Bluetooth Audio Setup</h3>
-                <p>Use your Bluetooth headphones, earbuds, or speakers with Air Assist:</p>
-                <ol>
-                  <li><strong>Connect to your computer:</strong> Pair your Bluetooth device with your computer first (Windows Settings → Bluetooth, Mac System Preferences → Bluetooth)</li>
-                  <li><strong>Set as default:</strong> Make your Bluetooth device the default audio device in your system settings</li>
-                  <li><strong>Click "Scan Audio Devices":</strong> Let Air Assist detect your connected devices</li>
-                  <li><strong>Select devices:</strong> Choose your Bluetooth microphone and speaker in Settings → Audio Device Selection</li>
-                </ol>
-                <p><strong>💡 Pro Tip:</strong> Air Assist automatically detects Bluetooth devices and will show them with a 🔵 blue indicator.</p>
+                {isMobile ? (
+                  <>
+                    <p>📱 <strong>Mobile Bluetooth Setup:</strong></p>
+                    {isIOS ? (
+                      <ol>
+                        <li>🍎 <strong>Pair Device:</strong> Settings → Bluetooth → Connect your headphones/earbuds</li>
+                        <li>🍎 <strong>Enable Audio:</strong> Tap the "i" next to your device → Enable "Use for Audio"</li>
+                        <li>🍎 <strong>Set as Default:</strong> Control Center → Audio controls → Select your Bluetooth device</li>
+                        <li>📲 <strong>Install App:</strong> Add to Home Screen for better Bluetooth support</li>
+                        <li>🎤 <strong>Test Voice:</strong> Use Settings → Audio Device Selection → Test Microphone</li>
+                      </ol>
+                      <p><strong>🍎 iOS Note:</strong> Safari has limited Bluetooth API support. Installing as PWA provides better audio access.</p>
+                    ) : isAndroid ? (
+                      <ol>
+                        <li>🤖 <strong>Pair Device:</strong> Settings → Connected devices → Bluetooth → Add your device</li>
+                        <li>🤖 <strong>Audio Settings:</strong> Settings → Sound → Advanced → Set Bluetooth device for calls and media</li>
+                        <li>🤖 <strong>Codec Settings:</strong> Developer options → Bluetooth Audio Codec (if available)</li>
+                        <li>📲 <strong>Install App:</strong> Add to Home Screen for better performance</li>
+                        <li>🎤 <strong>Test Voice:</strong> Use Settings → Audio Device Selection → Test Microphone</li>
+                      </ol>
+                      <p><strong>🤖 Android Note:</strong> Chrome provides better Bluetooth support than other mobile browsers.</p>
+                    ) : (
+                      <ol>
+                        <li>📱 <strong>Pair Device:</strong> Connect your Bluetooth headphones in device settings</li>
+                        <li>📱 <strong>Set as Default:</strong> Make sure it's the default audio device</li>
+                        <li>📲 <strong>Install App:</strong> Add to Home Screen for better support</li>
+                        <li>🎤 <strong>Test Voice:</strong> Use the microphone test feature</li>
+                      </ol>
+                    )}
+                    <p><strong>📱 Mobile Limitations:</strong> Mobile browsers have restricted Bluetooth access. For best results, install as PWA and ensure Bluetooth device is system default.</p>
+                  </>
+                ) : (
+                  <>
+                    <p>Use your Bluetooth headphones, earbuds, or speakers with Air Assist:</p>
+                    <ol>
+                      <li><strong>Connect to your computer:</strong> Pair your Bluetooth device with your computer first (Windows Settings → Bluetooth, Mac System Preferences → Bluetooth)</li>
+                      <li><strong>Set as default:</strong> Make your Bluetooth device the default audio device in your system settings</li>
+                      <li><strong>Click "Scan Audio Devices":</strong> Let Air Assist detect your connected devices</li>
+                      <li><strong>Select devices:</strong> Choose your Bluetooth microphone and speaker in Settings → Audio Device Selection</li>
+                    </ol>
+                    <p><strong>💡 Pro Tip:</strong> Air Assist automatically detects Bluetooth devices and will show them with a 🔵 blue indicator.</p>
+                  </>
+                )}
                 <p><strong>✅ Supported:</strong> All Bluetooth audio devices - AirPods, Sony, Bose, JBL, Beats, Jabra, and any Bluetooth headphones/speakers.</p>
               </div>
               <div className="help-section">
@@ -1074,6 +1205,29 @@ function App() {
                 <div className="help-section error-section">
                   <h3>⚠️ Browser Compatibility</h3>
                   <p>Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.</p>
+                </div>
+              )}
+
+              {isMobile && !isPWA && (
+                <div className="help-section pwa-section">
+                  <h3>📲 Install for Better Bluetooth Support</h3>
+                  <p><strong>Recommended:</strong> Install this app for improved Bluetooth microphone access on mobile devices.</p>
+                  {isIOS ? (
+                    <ol>
+                      <li>🍎 Tap the Share button in Safari</li>
+                      <li>🍎 Select "Add to Home Screen"</li>
+                      <li>🍎 Tap "Add" to install the app</li>
+                    </ol>
+                  ) : isAndroid ? (
+                    <ol>
+                      <li>🤖 Tap the menu (⋮) in Chrome</li>
+                      <li>🤖 Select "Add to Home screen"</li>
+                      <li>🤖 Tap "Add" to install the app</li>
+                    </ol>
+                  ) : (
+                    <p>📱 Look for "Add to Home Screen" or "Install App" option in your browser menu.</p>
+                  )}
+                  <p><strong>Benefits:</strong> Better audio permissions, offline access, and improved Bluetooth device support.</p>
                 </div>
               )}
             </div>
@@ -1329,12 +1483,35 @@ function App() {
                       {selectedAudioInput.isBluetooth && (
                         <div className="bluetooth-mic-tips">
                           <p>💡 <strong>Bluetooth Microphone Tips:</strong></p>
-                          <ul>
-                            <li>Ensure your {selectedAudioInput.label} is set as the default communication device</li>
-                            <li>Check Windows Sound settings → Recording → Set as Default Device</li>
-                            <li>Speak clearly and close to the microphone</li>
-                            <li>Test the microphone to verify it's working before using voice commands</li>
-                          </ul>
+                          {isMobile ? (
+                            <ul>
+                              <li>📱 <strong>Mobile Setup:</strong> Ensure your {selectedAudioInput.label} is connected and set as default audio device</li>
+                              {isIOS && (
+                                <>
+                                  <li>🍎 <strong>iOS:</strong> Settings → Bluetooth → {selectedAudioInput.label} → Enable "Use for Audio"</li>
+                                  <li>🍎 <strong>iOS:</strong> Control Center → Audio controls → Select your Bluetooth device</li>
+                                </>
+                              )}
+                              {isAndroid && (
+                                <>
+                                  <li>🤖 <strong>Android:</strong> Settings → Sound → Advanced → Bluetooth audio codec</li>
+                                  <li>🤖 <strong>Android:</strong> Ensure Bluetooth device is set as default for calls and media</li>
+                                </>
+                              )}
+                              <li>🔄 <strong>Troubleshooting:</strong> Disconnect and reconnect Bluetooth if voice input fails</li>
+                              {!isPWA && (
+                                <li>📲 <strong>Better Support:</strong> Install this app (Add to Home Screen) for improved Bluetooth access</li>
+                              )}
+                              <li>🎤 <strong>Testing:</strong> Use the microphone test below to verify it's working</li>
+                            </ul>
+                          ) : (
+                            <ul>
+                              <li>Ensure your {selectedAudioInput.label} is set as the default communication device</li>
+                              <li>Check Windows Sound settings → Recording → Set as Default Device</li>
+                              <li>Speak clearly and close to the microphone</li>
+                              <li>Test the microphone to verify it's working before using voice commands</li>
+                            </ul>
+                          )}
                         </div>
                       )}
                     </div>
