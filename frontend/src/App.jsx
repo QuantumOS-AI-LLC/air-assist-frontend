@@ -6,9 +6,12 @@ import './App.css'
 
 function App() {
   const [isListening, setIsListening] = useState(false)
-  const [bluetoothDevice, setBluetoothDevice] = useState(null)
+  const [audioDevices, setAudioDevices] = useState({ input: [], output: [] })
+  const [selectedAudioInput, setSelectedAudioInput] = useState(null)
+  const [selectedAudioOutput, setSelectedAudioOutput] = useState(null)
   const [isBluetoothConnected, setIsBluetoothConnected] = useState(false)
-  const [isBluetoothScanning, setIsBluetoothScanning] = useState(false)
+  const [isAudioDeviceScanning, setIsAudioDeviceScanning] = useState(false)
+  const [bluetoothDevices, setBluetoothDevices] = useState([])
   const [isN8nConnected, setIsN8nConnected] = useState(false)
   const [n8nUrl, setN8nUrl] = useState(() => {
     return localStorage.getItem('n8n_url') || config.defaultN8nUrl
@@ -447,184 +450,180 @@ function App() {
     }
   }
 
-  const connectBluetooth = async () => {
+  // Detect if a device name indicates it's a Bluetooth device
+  const isBluetoothDevice = (deviceName, deviceId) => {
+    if (!deviceName && !deviceId) return false
+
+    const bluetoothIndicators = [
+      'bluetooth', 'bt', 'wireless', 'airpods', 'sony', 'bose', 'jbl', 'beats',
+      'sennheiser', 'audio-technica', 'skullcandy', 'jabra', 'plantronics',
+      'marshall', 'harman', 'anker', 'soundcore', 'taotronics', 'mpow',
+      'headphone', 'headset', 'earbuds', 'speaker', 'buds'
+    ]
+
+    const name = (deviceName || '').toLowerCase()
+    const id = (deviceId || '').toLowerCase()
+
+    return bluetoothIndicators.some(indicator =>
+      name.includes(indicator) || id.includes(indicator)
+    )
+  }
+
+  // Enumerate and categorize audio devices
+  const enumerateAudioDevices = async () => {
     try {
-      if (!navigator.bluetooth) {
-        alert('❌ Bluetooth is not supported in this browser.\n\nPlease use Chrome, Edge, or another Chromium-based browser.')
-        return
-      }
+      setIsAudioDeviceScanning(true)
+      console.log('🔍 Scanning for audio devices...')
 
-      setIsBluetoothScanning(true)
-      console.log('🔍 Starting Bluetooth device scan for audio devices...')
+      // Request permissions first
+      await navigator.mediaDevices.getUserMedia({ audio: true })
 
-      // Define audio device filters
-      const audioDeviceFilters = [
-        // Try specific audio services first
-        {
-          services: ['0000110b-0000-1000-8000-00805f9b34fb'] // Audio Sink (A2DP)
-        },
-        {
-          services: ['0000111e-0000-1000-8000-00805f9b34fb'] // Hands-Free Profile
-        },
-        {
-          services: ['00001108-0000-1000-8000-00805f9b34fb'] // Headset Profile
-        },
-        // Fallback to name-based filtering for common audio devices
-        {
-          namePrefix: 'AirPods'
-        },
-        {
-          namePrefix: 'Sony'
-        },
-        {
-          namePrefix: 'Bose'
-        },
-        {
-          namePrefix: 'JBL'
-        },
-        {
-          namePrefix: 'Beats'
-        },
-        {
-          namePrefix: 'Sennheiser'
-        },
-        {
-          namePrefix: 'Audio'
-        },
-        {
-          namePrefix: 'Headphone'
-        },
-        {
-          namePrefix: 'Headset'
-        },
-        {
-          namePrefix: 'Earbuds'
-        },
-        {
-          namePrefix: 'Speaker'
+      // Get all media devices
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      console.log('📱 Found devices:', devices.length)
+
+      const inputDevices = []
+      const outputDevices = []
+      const bluetoothDevicesList = []
+
+      devices.forEach(device => {
+        const deviceInfo = {
+          deviceId: device.deviceId,
+          label: device.label || `${device.kind} (${device.deviceId.slice(0, 8)}...)`,
+          kind: device.kind,
+          groupId: device.groupId,
+          isBluetooth: isBluetoothDevice(device.label, device.deviceId)
         }
-      ]
 
-      let device = null
-      let lastError = null
+        console.log('🎧 Device:', deviceInfo.label, 'Type:', device.kind, 'Bluetooth:', deviceInfo.isBluetooth)
 
-      // Try each filter until we find devices or exhaust all options
-      for (const filter of audioDeviceFilters) {
-        try {
-          console.log('🔍 Trying filter:', filter)
-
-          const requestOptions = {
-            filters: [filter],
-            optionalServices: [
-              'generic_access',
-              'generic_attribute',
-              'device_information',
-              '0000110b-0000-1000-8000-00805f9b34fb', // Audio Sink
-              '0000111e-0000-1000-8000-00805f9b34fb', // Hands-Free
-              '00001108-0000-1000-8000-00805f9b34fb'  // Headset
-            ]
-          }
-
-          device = await navigator.bluetooth.requestDevice(requestOptions)
-          console.log('✅ Found device:', device.name || 'Unknown Device')
-          break // Success! Exit the loop
-
-        } catch (filterError) {
-          console.log('⚠️ Filter failed:', filter, filterError.message)
-          lastError = filterError
-
-          // If user cancelled, don't try more filters
-          if (filterError.name === 'NotFoundError' && filterError.message.includes('User cancelled')) {
-            throw filterError
-          }
-          continue // Try next filter
+        if (device.kind === 'audioinput') {
+          inputDevices.push(deviceInfo)
+        } else if (device.kind === 'audiooutput') {
+          outputDevices.push(deviceInfo)
         }
-      }
 
-      // If no device found with any filter, try acceptAllDevices as last resort
-      if (!device) {
-        console.log('🔍 No audio devices found, trying all devices...')
-        try {
-          device = await navigator.bluetooth.requestDevice({
-            acceptAllDevices: true,
-            optionalServices: [
-              'generic_access',
-              'generic_attribute',
-              'device_information',
-              '0000110b-0000-1000-8000-00805f9b34fb',
-              '0000111e-0000-1000-8000-00805f9b34fb',
-              '00001108-0000-1000-8000-00805f9b34fb'
-            ]
-          })
-        } catch (allDevicesError) {
-          throw lastError || allDevicesError
+        if (deviceInfo.isBluetooth) {
+          bluetoothDevicesList.push(deviceInfo)
         }
-      }
-
-      if (!device) {
-        throw new Error('No Bluetooth devices found')
-      }
-
-      console.log('🔗 Connecting to device:', device.name || 'Unknown Device')
-
-      // Connect to the device
-      const server = await device.gatt.connect()
-      console.log('✅ Connected to GATT server')
-
-      setBluetoothDevice(device)
-      setIsBluetoothConnected(true)
-
-      // Set up disconnect handler
-      device.addEventListener('gattserverdisconnected', () => {
-        console.log('📱 Bluetooth device disconnected')
-        setIsBluetoothConnected(false)
-        setBluetoothDevice(null)
-        addMessage(`Bluetooth device "${device.name || 'Unknown Device'}" disconnected`, 'assistant')
       })
 
-      addMessage(`✅ Connected to Bluetooth device: "${device.name || 'Unknown Device'}"`, 'assistant')
+      setAudioDevices({ input: inputDevices, output: outputDevices })
+      setBluetoothDevices(bluetoothDevicesList)
+
+      // Auto-select first Bluetooth device if available
+      const bluetoothInput = inputDevices.find(d => d.isBluetooth)
+      const bluetoothOutput = outputDevices.find(d => d.isBluetooth)
+
+      if (bluetoothInput && !selectedAudioInput) {
+        setSelectedAudioInput(bluetoothInput)
+        console.log('🎤 Auto-selected Bluetooth input:', bluetoothInput.label)
+      }
+
+      if (bluetoothOutput && !selectedAudioOutput) {
+        setSelectedAudioOutput(bluetoothOutput)
+        console.log('🔊 Auto-selected Bluetooth output:', bluetoothOutput.label)
+      }
+
+      // Update Bluetooth connection status
+      const hasBluetoothDevices = bluetoothDevicesList.length > 0
+      setIsBluetoothConnected(hasBluetoothDevices)
+
+      if (hasBluetoothDevices) {
+        const deviceNames = bluetoothDevicesList.map(d => d.label).join(', ')
+        addMessage(`✅ Found Bluetooth audio devices: ${deviceNames}`, 'assistant')
+        console.log('✅ Bluetooth devices detected:', bluetoothDevicesList)
+      } else {
+        addMessage(`ℹ️ No Bluetooth audio devices detected. Make sure your Bluetooth headphones/speakers are connected to your computer.`, 'assistant')
+      }
+
+      return { inputDevices, outputDevices, bluetoothDevicesList }
 
     } catch (error) {
-      console.error('❌ Bluetooth connection failed:', error)
+      console.error('❌ Error enumerating audio devices:', error)
 
-      let errorMessage = 'Failed to connect to Bluetooth device.'
+      let errorMessage = 'Failed to access audio devices.'
 
-      if (error.name === 'NotFoundError') {
-        if (error.message.includes('User cancelled')) {
-          errorMessage = 'Bluetooth pairing was cancelled.'
-        } else {
-          errorMessage = `No Bluetooth audio devices found.
+      if (error.name === 'NotAllowedError') {
+        errorMessage = `Microphone access denied.
 
-📱 To connect your audio device:
-
-1. Put your headphones/earbuds in PAIRING mode
-2. Make sure they're not connected to other devices
-3. Try again - they should appear in the list
-
-💡 Tip: If your device is already paired with your computer, you may need to disconnect it first, then put it in pairing mode.`
-        }
-      } else if (error.name === 'SecurityError') {
-        errorMessage = 'Bluetooth access denied. Please allow Bluetooth permissions and try again.'
-      } else if (error.name === 'NotSupportedError') {
-        errorMessage = 'This Bluetooth device is not supported for audio connections.'
+📱 To use Bluetooth audio devices:
+1. Allow microphone permissions in your browser
+2. Make sure your Bluetooth device is connected to your computer
+3. Try again`
+      } else if (error.name === 'NotFoundError') {
+        errorMessage = 'No audio devices found. Please check your audio device connections.'
       } else {
-        errorMessage = `Bluetooth Error: ${error.message}
-
-💡 Try putting your audio device in pairing mode and try again.`
+        errorMessage = `Audio device error: ${error.message}`
       }
 
       alert(errorMessage)
-      addMessage(`❌ Bluetooth connection failed: ${error.message}`, 'assistant')
+      addMessage(`❌ Audio device scan failed: ${error.message}`, 'assistant')
     } finally {
-      setIsBluetoothScanning(false)
+      setIsAudioDeviceScanning(false)
     }
   }
 
-  const disconnectBluetooth = () => {
-    if (bluetoothDevice && bluetoothDevice.gatt.connected) {
-      bluetoothDevice.gatt.disconnect()
+  // Connect to audio devices (scan and setup)
+  const connectAudioDevices = async () => {
+    await enumerateAudioDevices()
+  }
+
+  // Set up speech recognition with selected audio input
+  const setupSpeechRecognitionWithDevice = (inputDevice) => {
+    if (!recognitionRef.current) return
+
+    try {
+      // Note: Web Speech API doesn't directly support device selection
+      // But we can inform the user which device should be used
+      console.log('🎤 Speech recognition will use system default microphone')
+      console.log('💡 Make sure your Bluetooth device is set as default in system settings')
+
+      if (inputDevice && inputDevice.isBluetooth) {
+        addMessage(`🎤 Using Bluetooth microphone: ${inputDevice.label}. Make sure it's set as your system default microphone.`, 'assistant')
+      }
+    } catch (error) {
+      console.error('Error setting up speech recognition device:', error)
     }
   }
+
+  const disconnectAudioDevices = () => {
+    setSelectedAudioInput(null)
+    setSelectedAudioOutput(null)
+    setIsBluetoothConnected(false)
+    setBluetoothDevices([])
+    addMessage('🔌 Audio devices disconnected', 'assistant')
+  }
+
+  // Monitor device changes
+  useEffect(() => {
+    const handleDeviceChange = () => {
+      console.log('🔄 Audio devices changed, rescanning...')
+      setTimeout(() => {
+        enumerateAudioDevices()
+      }, 1000) // Delay to allow device to fully connect/disconnect
+    }
+
+    if (navigator.mediaDevices) {
+      navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange)
+
+      return () => {
+        navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange)
+      }
+    }
+  }, [])
+
+  // Auto-scan for devices on component mount
+  useEffect(() => {
+    const autoScanDevices = async () => {
+      // Wait a bit for component to fully mount
+      setTimeout(() => {
+        enumerateAudioDevices()
+      }, 2000)
+    }
+
+    autoScanDevices()
+  }, [])
 
   return (
     <div className="app">
@@ -653,8 +652,8 @@ function App() {
       {/* Status Bar */}
       <div className="status-bar">
         <div className="status-item">
-          <span className={`status-indicator ${isBluetoothConnected ? 'connected' : isBluetoothScanning ? 'connecting' : 'disconnected'}`}></span>
-          Bluetooth: {isBluetoothConnected ? 'Connected' : isBluetoothScanning ? 'Scanning...' : 'Disconnected'}
+          <span className={`status-indicator ${isBluetoothConnected ? 'connected' : isAudioDeviceScanning ? 'connecting' : 'disconnected'}`}></span>
+          Audio: {isBluetoothConnected ? `Connected (${bluetoothDevices.length} BT devices)` : isAudioDeviceScanning ? 'Scanning...' : 'Disconnected'}
         </div>
         <div className="status-item">
           <span className={`status-indicator ${isOpenAIConnected ? 'connected' : 'disconnected'}`}></span>
@@ -665,11 +664,11 @@ function App() {
           n8n: {isN8nConnected ? 'Connected' : 'Disconnected'}
         </div>
         <button
-          className={`connect-devices-btn ${isBluetoothScanning ? 'scanning' : ''}`}
-          onClick={connectBluetooth}
-          disabled={isBluetoothScanning}
+          className={`connect-devices-btn ${isAudioDeviceScanning ? 'scanning' : ''}`}
+          onClick={connectAudioDevices}
+          disabled={isAudioDeviceScanning}
         >
-          {isBluetoothScanning ? (
+          {isAudioDeviceScanning ? (
             <>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="scanning-icon">
                 <path d="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z"/>
@@ -681,7 +680,7 @@ function App() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M17.71,7.71L12,2H11V9.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L11,14.41V22H12L17.71,16.29L13.41,12L17.71,7.71Z M13,5.83L15.17,8L13,10.17V5.83Z M13,13.83L15.17,16L13,18.17V13.83Z"/>
               </svg>
-              Connect Devices
+              Scan Audio Devices
             </>
           )}
         </button>
@@ -742,15 +741,16 @@ function App() {
                 <p>Click &ldquo;Start Listening&rdquo; to begin voice recognition. Speak clearly and the app will process your commands.</p>
               </div>
               <div className="help-section">
-                <h3>📱 Bluetooth Connection</h3>
-                <p>Connect your Bluetooth audio devices for hands-free operation:</p>
+                <h3>🎧 Bluetooth Audio Setup</h3>
+                <p>Use your Bluetooth headphones, earbuds, or speakers with Air Assist:</p>
                 <ol>
-                  <li><strong>Put your device in pairing mode</strong> (headphones, earbuds, speakers)</li>
-                  <li><strong>Click "Connect Devices"</strong> to start scanning</li>
-                  <li><strong>Select your device</strong> from the list that appears</li>
+                  <li><strong>Connect to your computer:</strong> Pair your Bluetooth device with your computer first (Windows Settings → Bluetooth, Mac System Preferences → Bluetooth)</li>
+                  <li><strong>Set as default:</strong> Make your Bluetooth device the default audio device in your system settings</li>
+                  <li><strong>Click "Scan Audio Devices":</strong> Let Air Assist detect your connected devices</li>
+                  <li><strong>Select devices:</strong> Choose your Bluetooth microphone and speaker in Settings → Audio Device Selection</li>
                 </ol>
-                <p><strong>💡 Tip:</strong> If your device doesn't appear, make sure it's in pairing mode and not connected to other devices.</p>
-                <p><strong>🎧 Supported devices:</strong> AirPods, Sony, Bose, JBL, Beats, and most Bluetooth audio devices.</p>
+                <p><strong>💡 Pro Tip:</strong> Air Assist automatically detects Bluetooth devices and will show them with a 🔵 blue indicator.</p>
+                <p><strong>✅ Supported:</strong> All Bluetooth audio devices - AirPods, Sony, Bose, JBL, Beats, Jabra, and any Bluetooth headphones/speakers.</p>
               </div>
               <div className="help-section">
                 <h3>🔗 n8n Integration</h3>
@@ -950,7 +950,74 @@ function App() {
                   </div>
                 </div>
               )}
-              
+
+              <div className="settings-section">
+                <h3>🎧 Audio Device Selection</h3>
+                <div className="audio-device-section">
+                  <div className="device-group">
+                    <label>🎤 Microphone Input:</label>
+                    <select
+                      value={selectedAudioInput?.deviceId || ''}
+                      onChange={(e) => {
+                        const device = audioDevices.input.find(d => d.deviceId === e.target.value)
+                        setSelectedAudioInput(device)
+                        if (device) {
+                          setupSpeechRecognitionWithDevice(device)
+                          addMessage(`🎤 Selected microphone: ${device.label}`, 'assistant')
+                        }
+                      }}
+                      className="device-select"
+                    >
+                      <option value="">Select microphone...</option>
+                      {audioDevices.input.map(device => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.isBluetooth ? '🔵 ' : '🎤 '}{device.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="device-group">
+                    <label>🔊 Audio Output:</label>
+                    <select
+                      value={selectedAudioOutput?.deviceId || ''}
+                      onChange={(e) => {
+                        const device = audioDevices.output.find(d => d.deviceId === e.target.value)
+                        setSelectedAudioOutput(device)
+                        if (device) {
+                          addMessage(`🔊 Selected speaker: ${device.label}`, 'assistant')
+                        }
+                      }}
+                      className="device-select"
+                    >
+                      <option value="">Select speaker...</option>
+                      {audioDevices.output.map(device => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.isBluetooth ? '🔵 ' : '🔊 '}{device.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {bluetoothDevices.length > 0 && (
+                    <div className="bluetooth-devices-info">
+                      <h4>📱 Detected Bluetooth Devices:</h4>
+                      <ul>
+                        {bluetoothDevices.map(device => (
+                          <li key={device.deviceId}>
+                            🔵 {device.label} ({device.kind})
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <button onClick={connectAudioDevices} className="action-btn">
+                    🔄 Refresh Audio Devices
+                  </button>
+                </div>
+              </div>
+
               <div className="settings-section">
                 <h3>Actions</h3>
                 <div className="action-buttons">
@@ -964,8 +1031,8 @@ function App() {
                     {isFullScreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
                   </button>
                   {isBluetoothConnected && (
-                    <button onClick={disconnectBluetooth} className="action-btn disconnect-btn">
-                      Disconnect Bluetooth
+                    <button onClick={disconnectAudioDevices} className="action-btn disconnect-btn">
+                      Disconnect Audio Devices
                     </button>
                   )}
                   {useOpenAI && isOpenAIConnected && (

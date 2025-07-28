@@ -326,6 +326,78 @@ body {
   to { transform: rotate(360deg); }
 }
 
+/* Audio Device Selection */
+.audio-device-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.device-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.device-group label {
+  font-weight: 600;
+  color: #ecf0f1;
+  font-size: 0.9rem;
+}
+
+.device-select {
+  background: #4a5568;
+  border: 1px solid #5a6c7d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #ecf0f1;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.device-select:hover {
+  border-color: #667eea;
+  background: #5a6c7d;
+}
+
+.device-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.device-select option {
+  background: #4a5568;
+  color: #ecf0f1;
+  padding: 8px;
+}
+
+.bluetooth-devices-info {
+  background: rgba(66, 153, 225, 0.1);
+  border: 1px solid rgba(66, 153, 225, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.bluetooth-devices-info h4 {
+  margin: 0 0 8px 0;
+  color: #4299e1;
+  font-size: 0.9rem;
+}
+
+.bluetooth-devices-info ul {
+  margin: 0;
+  padding-left: 16px;
+  color: #ecf0f1;
+}
+
+.bluetooth-devices-info li {
+  margin: 4px 0;
+  font-size: 0.85rem;
+}
+
 /* Chat Container */
 .chat-container {
   flex: 1;
