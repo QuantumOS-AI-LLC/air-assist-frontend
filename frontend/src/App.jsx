@@ -15,6 +15,10 @@ function App() {
   const [showBluetoothModal, setShowBluetoothModal] = useState(false)
   const [availableBluetoothDevices, setAvailableBluetoothDevices] = useState([])
   const [isBluetoothScanning, setIsBluetoothScanning] = useState(false)
+  const [currentMediaStream, setCurrentMediaStream] = useState(null)
+  const [audioContext, setAudioContext] = useState(null)
+  const [isMicrophoneTesting, setIsMicrophoneTesting] = useState(false)
+  const [microphoneLevel, setMicrophoneLevel] = useState(0)
   const [isN8nConnected, setIsN8nConnected] = useState(false)
   const [n8nUrl, setN8nUrl] = useState(() => {
     return localStorage.getItem('n8n_url') || config.defaultN8nUrl
@@ -556,6 +560,13 @@ function App() {
       if (bluetoothInput && !selectedAudioInput) {
         setSelectedAudioInput(bluetoothInput)
         console.log('🎤 Auto-selected Bluetooth input:', bluetoothInput.label)
+
+        // Automatically set up the Bluetooth microphone
+        try {
+          await setupMicrophoneWithDevice(bluetoothInput)
+        } catch (error) {
+          console.error('❌ Failed to auto-setup Bluetooth microphone:', error)
+        }
       }
 
       if (bluetoothOutput && !selectedAudioOutput) {
@@ -683,31 +694,203 @@ function App() {
     await enumerateAudioDevices()
   }
 
+  // Set up microphone access with selected audio input device
+  const setupMicrophoneWithDevice = async (inputDevice) => {
+    try {
+      // Stop any existing media stream
+      if (currentMediaStream) {
+        currentMediaStream.getTracks().forEach(track => track.stop())
+        setCurrentMediaStream(null)
+      }
+
+      if (!inputDevice) {
+        console.log('🎤 No input device selected')
+        return
+      }
+
+      console.log('🎤 Setting up microphone with device:', inputDevice.label)
+
+      // Create audio constraints for the specific device
+      const audioConstraints = {
+        deviceId: inputDevice.deviceId ? { exact: inputDevice.deviceId } : undefined,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        sampleRate: 44100
+      }
+
+      console.log('🎤 Audio constraints:', audioConstraints)
+
+      // Request access to the specific microphone
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: false
+      })
+
+      setCurrentMediaStream(stream)
+      console.log('✅ Microphone access granted for device:', inputDevice.label)
+
+      if (inputDevice.isBluetooth) {
+        addMessage(`✅ Bluetooth microphone connected: ${inputDevice.label}. Voice input is now active!`, 'assistant')
+      } else {
+        addMessage(`✅ Microphone connected: ${inputDevice.label}`, 'assistant')
+      }
+
+      // Set up audio level monitoring
+      setupAudioLevelMonitoring(stream)
+
+      return stream
+
+    } catch (error) {
+      console.error('❌ Error setting up microphone:', error)
+
+      let errorMessage = 'Failed to access microphone.'
+
+      if (error.name === 'NotAllowedError') {
+        errorMessage = `Microphone access denied. Please allow microphone permissions and try again.`
+      } else if (error.name === 'NotFoundError') {
+        errorMessage = `Selected microphone not found. Please check your device connection.`
+      } else if (error.name === 'OverconstrainedError') {
+        errorMessage = `Microphone constraints not supported. Trying with basic settings...`
+
+        // Fallback with basic constraints
+        try {
+          const fallbackStream = await navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: inputDevice.deviceId },
+            video: false
+          })
+          setCurrentMediaStream(fallbackStream)
+          setupAudioLevelMonitoring(fallbackStream)
+          addMessage(`✅ Microphone connected with basic settings: ${inputDevice.label}`, 'assistant')
+          return fallbackStream
+        } catch (fallbackError) {
+          console.error('❌ Fallback microphone setup failed:', fallbackError)
+          errorMessage = `Failed to access microphone: ${fallbackError.message}`
+        }
+      } else {
+        errorMessage = `Microphone error: ${error.message}`
+      }
+
+      addMessage(`❌ ${errorMessage}`, 'assistant')
+      throw error
+    }
+  }
+
+  // Set up audio level monitoring for visual feedback
+  const setupAudioLevelMonitoring = (stream) => {
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+      const analyser = audioContext.createAnalyser()
+      const microphone = audioContext.createMediaStreamSource(stream)
+
+      analyser.fftSize = 256
+      const bufferLength = analyser.frequencyBinCount
+      const dataArray = new Uint8Array(bufferLength)
+
+      microphone.connect(analyser)
+
+      const updateLevel = () => {
+        analyser.getByteFrequencyData(dataArray)
+        const average = dataArray.reduce((sum, value) => sum + value, 0) / bufferLength
+        const level = Math.round((average / 255) * 100)
+        setMicrophoneLevel(level)
+
+        if (currentMediaStream) {
+          requestAnimationFrame(updateLevel)
+        }
+      }
+
+      updateLevel()
+      setAudioContext(audioContext)
+
+    } catch (error) {
+      console.error('❌ Error setting up audio level monitoring:', error)
+    }
+  }
+
+  // Test microphone functionality
+  const testMicrophone = async () => {
+    if (!selectedAudioInput) {
+      addMessage('❌ Please select a microphone first', 'assistant')
+      return
+    }
+
+    setIsMicrophoneTesting(true)
+
+    try {
+      console.log('🧪 Testing microphone:', selectedAudioInput.label)
+
+      const stream = await setupMicrophoneWithDevice(selectedAudioInput)
+
+      if (stream) {
+        addMessage(`🧪 Microphone test started. Speak now to test your ${selectedAudioInput.isBluetooth ? 'Bluetooth' : ''} microphone...`, 'assistant')
+
+        // Test for 5 seconds
+        setTimeout(() => {
+          setIsMicrophoneTesting(false)
+          addMessage(`✅ Microphone test completed. ${selectedAudioInput.isBluetooth ? 'Bluetooth microphone' : 'Microphone'} is working!`, 'assistant')
+        }, 5000)
+      }
+
+    } catch (error) {
+      setIsMicrophoneTesting(false)
+      console.error('❌ Microphone test failed:', error)
+    }
+  }
+
   // Set up speech recognition with selected audio input
-  const setupSpeechRecognitionWithDevice = (inputDevice) => {
+  const setupSpeechRecognitionWithDevice = async (inputDevice) => {
     if (!recognitionRef.current) return
 
     try {
-      // Note: Web Speech API doesn't directly support device selection
-      // But we can inform the user which device should be used
-      console.log('🎤 Speech recognition will use system default microphone')
-      console.log('💡 Make sure your Bluetooth device is set as default in system settings')
+      // First, set up the microphone access
+      await setupMicrophoneWithDevice(inputDevice)
+
+      console.log('🎤 Speech recognition configured for device:', inputDevice.label)
 
       if (inputDevice && inputDevice.isBluetooth) {
-        addMessage(`🎤 Using Bluetooth microphone: ${inputDevice.label}. Make sure it's set as your system default microphone.`, 'assistant')
+        addMessage(`🎤 Bluetooth microphone ready: ${inputDevice.label}.
+
+💡 Important: Make sure your Bluetooth device is set as the default communication device in Windows Sound settings for best results.`, 'assistant')
       }
     } catch (error) {
       console.error('Error setting up speech recognition device:', error)
+      addMessage(`❌ Failed to set up microphone: ${error.message}`, 'assistant')
     }
   }
 
   const disconnectAudioDevices = () => {
+    // Stop any active media streams
+    if (currentMediaStream) {
+      currentMediaStream.getTracks().forEach(track => track.stop())
+      setCurrentMediaStream(null)
+    }
+
+    // Close audio context
+    if (audioContext) {
+      audioContext.close()
+      setAudioContext(null)
+    }
+
     setSelectedAudioInput(null)
     setSelectedAudioOutput(null)
     setIsBluetoothConnected(false)
     setBluetoothDevices([])
+    setMicrophoneLevel(0)
     addMessage('🔌 Audio devices disconnected', 'assistant')
   }
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (currentMediaStream) {
+        currentMediaStream.getTracks().forEach(track => track.stop())
+      }
+      if (audioContext) {
+        audioContext.close()
+      }
+    }
+  }, [])
 
   // Monitor device changes
   useEffect(() => {
@@ -1115,6 +1298,47 @@ function App() {
                       ))}
                     </select>
                   </div>
+
+                  {/* Microphone Test Section */}
+                  {selectedAudioInput && (
+                    <div className="microphone-test-section">
+                      <h4>🧪 Microphone Test</h4>
+                      <div className="mic-test-controls">
+                        <button
+                          onClick={testMicrophone}
+                          disabled={isMicrophoneTesting}
+                          className="test-mic-btn"
+                        >
+                          {isMicrophoneTesting ? '🧪 Testing...' : '🧪 Test Microphone'}
+                        </button>
+
+                        {currentMediaStream && (
+                          <div className="audio-level-indicator">
+                            <span>Audio Level:</span>
+                            <div className="level-bar">
+                              <div
+                                className="level-fill"
+                                style={{ width: `${microphoneLevel}%` }}
+                              ></div>
+                            </div>
+                            <span>{microphoneLevel}%</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {selectedAudioInput.isBluetooth && (
+                        <div className="bluetooth-mic-tips">
+                          <p>💡 <strong>Bluetooth Microphone Tips:</strong></p>
+                          <ul>
+                            <li>Ensure your {selectedAudioInput.label} is set as the default communication device</li>
+                            <li>Check Windows Sound settings → Recording → Set as Default Device</li>
+                            <li>Speak clearly and close to the microphone</li>
+                            <li>Test the microphone to verify it's working before using voice commands</li>
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {bluetoothDevices.length > 0 && (
                     <div className="bluetooth-devices-info">
