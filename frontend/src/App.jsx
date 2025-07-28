@@ -12,6 +12,9 @@ function App() {
   const [isBluetoothConnected, setIsBluetoothConnected] = useState(false)
   const [isAudioDeviceScanning, setIsAudioDeviceScanning] = useState(false)
   const [bluetoothDevices, setBluetoothDevices] = useState([])
+  const [showBluetoothModal, setShowBluetoothModal] = useState(false)
+  const [availableBluetoothDevices, setAvailableBluetoothDevices] = useState([])
+  const [isBluetoothScanning, setIsBluetoothScanning] = useState(false)
   const [isN8nConnected, setIsN8nConnected] = useState(false)
   const [n8nUrl, setN8nUrl] = useState(() => {
     return localStorage.getItem('n8n_url') || config.defaultN8nUrl
@@ -476,7 +479,7 @@ function App() {
       'audio-technica', 'skullcandy', 'jabra', 'plantronics',
       'marshall', 'harman', 'anker', 'soundcore', 'taotronics',
       'mpow', 'samsung', 'lg', 'xiaomi', 'huawei', 'oneplus',
-      'nothing', 'skull candy', 'audio technica'
+      'nothing', 'skull candy', 'audio technica', 'j55'
     ]
 
     // Bluetooth technology indicators
@@ -607,6 +610,74 @@ function App() {
     }
   }
 
+  // Bluetooth device scanning using Web Bluetooth API
+  const scanForBluetoothDevices = async () => {
+    if (isBluetoothScanning) return
+
+    setIsBluetoothScanning(true)
+    setShowBluetoothModal(true)
+
+    try {
+      console.log('🔍 Scanning for Bluetooth devices...')
+
+      // Check if Web Bluetooth is supported
+      if (!navigator.bluetooth) {
+        throw new Error('Web Bluetooth is not supported in this browser')
+      }
+
+      // Request Bluetooth device with audio services
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [
+          { services: ['battery_service'] },
+          { services: [0x110B] }, // Audio Sink
+          { services: [0x110E] }, // A2DP
+          { services: [0x111E] }, // Hands-free
+        ],
+        optionalServices: [
+          'battery_service',
+          'device_information',
+          0x110B, // Audio Sink
+          0x110E, // A2DP
+          0x111E, // Hands-free
+          0x1108, // Headset
+          0x110A, // Audio Source
+        ],
+        acceptAllDevices: false
+      })
+
+      console.log('📱 Found Bluetooth device:', device.name)
+
+      // Add to available devices
+      const newDevice = {
+        id: device.id,
+        name: device.name || 'Unknown Device',
+        connected: device.gatt?.connected || false,
+        type: 'audio',
+        battery: null
+      }
+
+      setAvailableBluetoothDevices(prev => {
+        const exists = prev.find(d => d.id === device.id)
+        if (exists) return prev
+        return [...prev, newDevice]
+      })
+
+      addMessage(`✅ Found Bluetooth device: ${device.name}`, 'assistant')
+
+    } catch (error) {
+      console.error('❌ Bluetooth scan error:', error)
+      if (error.name === 'NotFoundError') {
+        addMessage('ℹ️ No Bluetooth devices selected or found.', 'assistant')
+      } else if (error.name === 'NotSupportedError') {
+        addMessage('❌ Web Bluetooth is not supported in this browser. Try Chrome/Edge.', 'assistant')
+      } else {
+        addMessage(`❌ Bluetooth error: ${error.message}`, 'assistant')
+      }
+    } finally {
+      setIsBluetoothScanning(false)
+    }
+  }
+
   // Connect to audio devices (scan and setup)
   const connectAudioDevices = async () => {
     await enumerateAudioDevices()
@@ -708,7 +779,10 @@ function App() {
         </div>
         <button
           className={`connect-devices-btn ${isAudioDeviceScanning ? 'scanning' : ''}`}
-          onClick={connectAudioDevices}
+          onClick={() => {
+            connectAudioDevices()
+            setShowBluetoothModal(true)
+          }}
           disabled={isAudioDeviceScanning}
         >
           {isAudioDeviceScanning ? (
@@ -1093,6 +1167,75 @@ function App() {
                     </button>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bluetooth Device Modal */}
+      {showBluetoothModal && (
+        <div className="modal-overlay" onClick={() => setShowBluetoothModal(false)}>
+          <div className="modal-content bluetooth-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>🔵 Bluetooth Devices</h3>
+              <button className="modal-close" onClick={() => setShowBluetoothModal(false)}>×</button>
+            </div>
+
+            <div className="modal-body">
+              <div className="bluetooth-section">
+                <h4>Your devices</h4>
+
+                {availableBluetoothDevices.length > 0 ? (
+                  <div className="device-list">
+                    {availableBluetoothDevices.map(device => (
+                      <div key={device.id} className="device-item">
+                        <div className="device-icon">🎧</div>
+                        <div className="device-info">
+                          <div className="device-name">{device.name}</div>
+                          <div className="device-status">
+                            {device.connected ? 'Connected mic, audio' : 'Not connected'}
+                          </div>
+                        </div>
+                        {device.battery && (
+                          <div className="device-battery">{device.battery}%</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="no-devices">
+                    <p>No Bluetooth devices found in browser.</p>
+                    <p>Your J55 and other devices may be connected to your computer but not accessible to the browser.</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="bluetooth-actions">
+                <button
+                  onClick={scanForBluetoothDevices}
+                  disabled={isBluetoothScanning}
+                  className="scan-btn"
+                >
+                  {isBluetoothScanning ? '🔍 Scanning...' : '🔍 Scan for Devices'}
+                </button>
+
+                <button
+                  onClick={connectAudioDevices}
+                  className="refresh-btn"
+                >
+                  🔄 Refresh Audio Devices
+                </button>
+              </div>
+
+              <div className="bluetooth-info">
+                <h4>💡 How to connect your J55:</h4>
+                <ol>
+                  <li>Make sure your J55 is paired with your computer</li>
+                  <li>Set it as the default audio device in Windows</li>
+                  <li>Click "Refresh Audio Devices" above</li>
+                  <li>Your J55 should appear in the audio device list</li>
+                </ol>
               </div>
             </div>
           </div>
