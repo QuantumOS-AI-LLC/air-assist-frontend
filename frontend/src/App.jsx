@@ -454,19 +454,54 @@ function App() {
   const isBluetoothDevice = (deviceName, deviceId) => {
     if (!deviceName && !deviceId) return false
 
-    const bluetoothIndicators = [
-      'bluetooth', 'bt', 'wireless', 'airpods', 'sony', 'bose', 'jbl', 'beats',
-      'sennheiser', 'audio-technica', 'skullcandy', 'jabra', 'plantronics',
-      'marshall', 'harman', 'anker', 'soundcore', 'taotronics', 'mpow',
-      'headphone', 'headset', 'earbuds', 'speaker', 'buds'
-    ]
-
     const name = (deviceName || '').toLowerCase()
     const id = (deviceId || '').toLowerCase()
 
-    return bluetoothIndicators.some(indicator =>
-      name.includes(indicator) || id.includes(indicator)
-    )
+    // Exclude built-in/system audio devices
+    const systemAudioExclusions = [
+      'realtek', 'intel', 'nvidia', 'amd', 'via', 'creative', 'asus', 'msi',
+      'built-in', 'internal', 'onboard', 'integrated', 'motherboard',
+      'smart sound technology', 'high definition audio', 'hd audio',
+      'ac97', 'azalia', 'conexant', 'sigmatel', 'idt', 'cirrus logic'
+    ]
+
+    // If it's a system audio device, it's not Bluetooth
+    if (systemAudioExclusions.some(exclusion => name.includes(exclusion) || id.includes(exclusion))) {
+      return false
+    }
+
+    // Specific Bluetooth brand indicators (more precise)
+    const bluetoothBrands = [
+      'airpods', 'sony', 'bose', 'jbl', 'beats', 'sennheiser',
+      'audio-technica', 'skullcandy', 'jabra', 'plantronics',
+      'marshall', 'harman', 'anker', 'soundcore', 'taotronics',
+      'mpow', 'samsung', 'lg', 'xiaomi', 'huawei', 'oneplus',
+      'nothing', 'skull candy', 'audio technica'
+    ]
+
+    // Bluetooth technology indicators
+    const bluetoothTechIndicators = [
+      'bluetooth', 'bt ', ' bt', 'wireless headphone', 'wireless earbuds',
+      'wireless speaker', 'true wireless', 'tws', 'hands-free',
+      'a2dp', 'hfp', 'hsp', 'avrcp'
+    ]
+
+    // Check for Bluetooth brands
+    if (bluetoothBrands.some(brand => name.includes(brand) || id.includes(brand))) {
+      return true
+    }
+
+    // Check for Bluetooth technology indicators
+    if (bluetoothTechIndicators.some(indicator => name.includes(indicator) || id.includes(indicator))) {
+      return true
+    }
+
+    // Check device ID patterns that indicate Bluetooth
+    if (id.includes('bluetooth') || id.includes('bt_') || id.includes('_bt_')) {
+      return true
+    }
+
+    return false
   }
 
   // Enumerate and categorize audio devices
@@ -495,7 +530,7 @@ function App() {
           isBluetooth: isBluetoothDevice(device.label, device.deviceId)
         }
 
-        console.log('🎧 Device:', deviceInfo.label, 'Type:', device.kind, 'Bluetooth:', deviceInfo.isBluetooth)
+        console.log('🎧 Device:', deviceInfo.label, 'Type:', device.kind, 'Bluetooth:', deviceInfo.isBluetooth, 'ID:', device.deviceId.slice(0, 20) + '...')
 
         if (device.kind === 'audioinput') {
           inputDevices.push(deviceInfo)
@@ -531,10 +566,18 @@ function App() {
 
       if (hasBluetoothDevices) {
         const deviceNames = bluetoothDevicesList.map(d => d.label).join(', ')
-        addMessage(`✅ Found Bluetooth audio devices: ${deviceNames}`, 'assistant')
+        addMessage(`✅ Found ${bluetoothDevicesList.length} Bluetooth audio device(s): ${deviceNames}`, 'assistant')
         console.log('✅ Bluetooth devices detected:', bluetoothDevicesList)
       } else {
-        addMessage(`ℹ️ No Bluetooth audio devices detected. Make sure your Bluetooth headphones/speakers are connected to your computer.`, 'assistant')
+        console.log('ℹ️ No Bluetooth devices detected. System audio devices found:', inputDevices.length + outputDevices.length)
+        addMessage(`ℹ️ No Bluetooth audio devices detected.
+
+📱 To connect Bluetooth devices:
+1. Turn ON Bluetooth on your computer
+2. Pair your headphones/speakers with your computer
+3. Click "Scan Audio Devices" again
+
+💡 Currently showing ${inputDevices.length + outputDevices.length} system audio devices (built-in microphones/speakers).`, 'assistant')
       }
 
       return { inputDevices, outputDevices, bluetoothDevicesList }
