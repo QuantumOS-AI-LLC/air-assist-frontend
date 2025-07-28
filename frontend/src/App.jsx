@@ -1148,24 +1148,28 @@ function App() {
                   <>
                     <p>📱 <strong>Mobile Bluetooth Setup:</strong></p>
                     {isIOS ? (
-                      <ol>
-                        <li>🍎 <strong>Pair Device:</strong> Settings → Bluetooth → Connect your headphones/earbuds</li>
-                        <li>🍎 <strong>Enable Audio:</strong> Tap the "i" next to your device → Enable "Use for Audio"</li>
-                        <li>🍎 <strong>Set as Default:</strong> Control Center → Audio controls → Select your Bluetooth device</li>
-                        <li>📲 <strong>Install App:</strong> Add to Home Screen for better Bluetooth support</li>
-                        <li>🎤 <strong>Test Voice:</strong> Use Settings → Audio Device Selection → Test Microphone</li>
-                      </ol>
-                      <p><strong>🍎 iOS Note:</strong> Safari has limited Bluetooth API support. Installing as PWA provides better audio access.</p>
+                      <>
+                        <ol>
+                          <li>🍎 <strong>Pair Device:</strong> Settings → Bluetooth → Connect your headphones/earbuds</li>
+                          <li>🍎 <strong>Enable Audio:</strong> Tap the "i" next to your device → Enable "Use for Audio"</li>
+                          <li>🍎 <strong>Set as Default:</strong> Control Center → Audio controls → Select your Bluetooth device</li>
+                          <li>📲 <strong>Install App:</strong> Add to Home Screen for better Bluetooth support</li>
+                          <li>🎤 <strong>Test Voice:</strong> Use Settings → Audio Device Selection → Test Microphone</li>
+                        </ol>
+                        <p><strong>🍎 iOS Note:</strong> Safari has limited Bluetooth API support. Installing as PWA provides better audio access.</p>
+                      </>
                     ) : isAndroid ? (
-                      <ol>
-                        <li>🤖 <strong>Pair Device:</strong> Settings → Connected devices → Bluetooth → Connect your headphones</li>
-                        <li>🤖 <strong>Enable Audio:</strong> Tap gear icon next to device → Enable "Phone calls" and "Media audio"</li>
-                        <li>🤖 <strong>Set as Default:</strong> Settings → Sound → Advanced → Make sure Bluetooth device is default</li>
-                        <li>🤖 <strong>Chrome Permissions:</strong> Allow microphone access when prompted</li>
-                        <li>📲 <strong>Install App:</strong> Add to Home Screen for better performance</li>
-                        <li>🎤 <strong>Test Voice:</strong> Use Settings → Audio Device Selection → Test Microphone</li>
-                      </ol>
-                      <p><strong>🤖 Android Note:</strong> App uses system audio routing. Ensure your Bluetooth device is set as default for calls and media.</p>
+                      <>
+                        <ol>
+                          <li>🤖 <strong>Pair Device:</strong> Settings → Connected devices → Bluetooth → Connect your headphones</li>
+                          <li>🤖 <strong>Enable Audio:</strong> Tap gear icon next to device → Enable "Phone calls" and "Media audio"</li>
+                          <li>🤖 <strong>Set as Default:</strong> Settings → Sound → Advanced → Make sure Bluetooth device is default</li>
+                          <li>🤖 <strong>Chrome Permissions:</strong> Allow microphone access when prompted</li>
+                          <li>📲 <strong>Install App:</strong> Add to Home Screen for better performance</li>
+                          <li>🎤 <strong>Test Voice:</strong> Use Settings → Audio Device Selection → Test Microphone</li>
+                        </ol>
+                        <p><strong>🤖 Android Note:</strong> App uses system audio routing. Ensure your Bluetooth device is set as default for calls and media.</p>
+                      </>
                     ) : (
                       <ol>
                         <li>📱 <strong>Pair Device:</strong> Connect your Bluetooth headphones in device settings</li>
