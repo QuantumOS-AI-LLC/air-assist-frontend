@@ -1,9 +1,10 @@
-// OpenAI Realtime API Service
+// OpenAI Realtime API Service - Socket.IO Version
+import { io } from 'socket.io-client';
 import config from '../config/env.js';
 
 class OpenAIRealtimeService {
   constructor() {
-    this.ws = null;
+    this.socket = null;
     this.isConnected = false;
     this.sessionCreated = false;
     this.apiKey = null;
@@ -25,7 +26,7 @@ class OpenAIRealtimeService {
 
   // Initialize connection with API key
   async connect(apiKey, callbacks = {}) {
-    if (this.ws && this.isConnected) {
+    if (this.socket && this.isConnected) {
       console.log("Already connected.");
       return;
     }
@@ -37,158 +38,133 @@ class OpenAIRealtimeService {
     this.onDisconnect = callbacks.onDisconnect || (() => {});
 
     try {
-      // Determine connection method based on environment
-      if (config.isProduction || !config.websocketUrl) {
-        // Production: Connect directly to OpenAI using ephemeral token
-        console.log("Getting ephemeral token for OpenAI Realtime API...");
-
-        // Get ephemeral token from our session API
-        const sessionResponse = await fetch(config.sessionUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (!sessionResponse.ok) {
-          throw new Error(`Failed to get session: ${sessionResponse.status}`);
-        }
-
-        const sessionData = await sessionResponse.json();
-        console.log("Got ephemeral token:", sessionData.ephemeral_token.substring(0, 20) + '...');
-
-        // Connect using ephemeral token in URL - OpenAI Realtime API format
-        // Browser WebSocket doesn't support custom headers, so embed token in URL
-        const encodedToken = encodeURIComponent(`Bearer ${sessionData.ephemeral_token}`);
-        const wsUrl = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17&authorization=${encodedToken}`;
-        console.log("Connecting to OpenAI Realtime API with ephemeral token in URL:", sessionData.ephemeral_token.substring(0, 20) + '...');
-
-        // Connect with token embedded in URL
-        this.ws = new WebSocket(wsUrl);
-        this.ephemeralToken = sessionData.ephemeral_token;
-      } else {
-        // Development: Use local proxy
-        console.log("Connecting to OpenAI Realtime API via local WebSocket proxy...");
-        const wsUrl = config.websocketUrl;
-        this.ws = new WebSocket(wsUrl);
-      }
+      // Connect to backend Socket.IO server
+      console.log("Connecting to backend Socket.IO server...");
+      
+      this.socket = io(config.backendUrl, {
+        path: '/socket.io/',
+        transports: ['websocket', 'polling'],
+        timeout: 20000,
+        forceNew: true
+      });
 
     } catch (error) {
-      console.error("Failed to get ephemeral token:", error);
+      console.error("Failed to connect to backend:", error);
       this.onError(error);
       return;
     }
 
-    this.ws.onopen = () => {
-      console.log("WebSocket connection established.");
-
+    this.socket.on('connect', () => {
+      console.log("✅ Socket.IO connection established with backend");
       this.isConnected = true;
       this.onConnect();
 
       // After connection, create a session
-      if (!config.isProduction && config.websocketUrl) {
-        // Development: Use local proxy
-        this.createSession();
-      } else {
-        // Production: Authentication handled via URL token, wait for session.created event
-        console.log("WebSocket connected with URL authentication. Waiting for session.created event...");
-        // No need to send session.update - authentication is handled by URL token
-      }
-    };
+      this.createSession();
+    });
 
-    this.ws.onmessage = (event) => {
+    this.socket.on('realtime-response', (message) => {
       try {
         // Handle binary messages (audio data)
-        if (event.data instanceof Blob) {
-          console.log("Received binary message from OpenAI (audio data)", event.data.size, "bytes");
-          // Handle binary audio data - could be processed for audio playback
-          this.handleBinaryMessage(event.data);
+        if (Buffer.isBuffer(message) || message instanceof ArrayBuffer) {
+          console.log("🎵 Received binary message from backend (audio data)", message.length || message.byteLength, "bytes");
+          this.handleBinaryMessage(message);
           return;
         }
 
-        // Handle ArrayBuffer (another binary format)
-        if (event.data instanceof ArrayBuffer) {
-          console.log("Received ArrayBuffer from OpenAI (audio data)", event.data.byteLength, "bytes");
-          this.handleBinaryMessage(event.data);
+        // Handle JSON messages
+        if (typeof message === 'object' && message.type) {
+          console.log("📥 Received JSON message from backend:", message.type);
+
+          // Log detailed error information
+          if (message.type === 'error') {
+            console.error("🚨 OpenAI Realtime API Error Details:");
+            console.error("Error Type:", message.error?.type);
+            console.error("Error Code:", message.error?.code);
+            console.error("Error Message:", message.error?.message);
+            console.error("Error Param:", message.error?.param);
+            console.error("Full Error Object:", JSON.stringify(message.error, null, 2));
+          }
+
+          this.onMessage(message);
           return;
         }
 
-        // Handle text messages
-        if (typeof event.data === 'string') {
+        // Handle string messages
+        if (typeof message === 'string') {
           try {
-            const message = JSON.parse(event.data);
-            console.log("Received text message from OpenAI:", message.type || 'unknown');
-
-            // Log detailed error information
-            if (message.type === 'error') {
-              console.error("🚨 OpenAI Realtime API Error Details:");
-              console.error("Error Type:", message.error?.type);
-              console.error("Error Code:", message.error?.code);
-              console.error("Error Message:", message.error?.message);
-              console.error("Error Param:", message.error?.param);
-              console.error("Full Error Object:", JSON.stringify(message.error, null, 2));
-            }
-
-            this.onMessage(message);
+            const parsedMessage = JSON.parse(message);
+            console.log("📥 Received parsed JSON message from backend:", parsedMessage.type || 'unknown');
+            this.onMessage(parsedMessage);
           } catch (parseError) {
-            console.log("Received non-JSON text message:", event.data.substring(0, 100));
+            console.log("📥 Received non-JSON string message:", message.substring(0, 100));
+            // Handle as plain text
+            this.onMessage({ type: 'text', content: message });
           }
           return;
         }
 
-        console.warn("Received unknown message type:", typeof event.data, event.data);
+        console.warn("Received unknown message type:", typeof message, message);
 
       } catch (error) {
-        console.error("Error processing message:", error);
+        console.error("Error processing message from backend:", error);
       }
-    };
+    });
 
-    this.ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
+    this.socket.on('realtime-error', (error) => {
+      console.error("❌ Backend error:", error);
+      this.onError(new Error(error.error?.message || 'Backend connection error'));
+    });
+
+    this.socket.on('disconnect', (reason) => {
+      console.log("🔌 Socket.IO connection disconnected. Reason:", reason);
       this.isConnected = false;
-      this.onError(new Error("WebSocket connection error."));
-    };
-
-    this.ws.onclose = (event) => {
-      if (event.code === 1000 && this.sessionCreated) {
-        console.log("✅ OpenAI session completed successfully (code 1000)");
-        console.log("🔄 This is normal behavior - OpenAI closes after session completion");
-        console.log("🔄 Connection state maintained for future requests");
-        // Keep connection state as true since we can reconnect
-        return;
-      }
-
-      console.log("🔌 WebSocket connection closed. Code:", event.code, "Reason:", event.reason);
-      this.isConnected = false;
-      this.ws = null;
+      this.socket = null;
       this.onDisconnect();
-    };
+    });
+
+    this.socket.on('connect_error', (error) => {
+      console.error("❌ Socket.IO connection error:", error);
+      this.isConnected = false;
+      this.onError(new Error("Failed to connect to backend: " + error.message));
+    });
   }
 
   // Disconnect from the service
   disconnect() {
-    if (this.ws) {
-      console.log("Disconnecting from OpenAI Realtime API...");
-      this.ws.close();
+    if (this.socket) {
+      console.log("Disconnecting from backend Socket.IO server...");
+      this.socket.disconnect();
+      this.socket = null;
+      this.isConnected = false;
     }
   }
 
-  // Send a message to the API
+  // Send a message to the API via Socket.IO
   send(message) {
-    if (this.ws && this.isConnected) {
-      console.log('📤 Sending message to OpenAI:', message.type);
-      const jsonString = JSON.stringify(message);
-      console.log('📤 Sending as text string, length:', jsonString.length);
-      this.ws.send(jsonString);
+    if (this.socket && this.isConnected) {
+      console.log('📤 Sending message to backend:', message.type);
+      this.socket.emit('realtime-message', message);
     } else if (!this.isConnected) {
-      console.error("WebSocket is not connected.");
+      console.error("Socket.IO is not connected.");
       this.onError(new Error("Attempted to send message while disconnected."));
+    }
+  }
+
+  // Send binary audio data
+  sendAudio(audioData) {
+    if (this.socket && this.isConnected) {
+      console.log('🎵 Sending audio data to backend:', audioData.length || audioData.byteLength, 'bytes');
+      this.socket.emit('realtime-audio', audioData);
+    } else if (!this.isConnected) {
+      console.error("Socket.IO is not connected.");
+      this.onError(new Error("Attempted to send audio while disconnected."));
     }
   }
 
   // Create a new session
   createSession(options = {}) {
-    console.log('🚀 Creating OpenAI session...');
+    console.log('🚀 Creating OpenAI session via backend...');
     const sessionMessage = {
       type: 'session.create',
       session: {
@@ -201,7 +177,7 @@ class OpenAIRealtimeService {
         ...options
       }
     };
-    console.log('📤 Sending session.create:', sessionMessage);
+    console.log('📤 Sending session.create via Socket.IO:', sessionMessage);
     this.send(sessionMessage);
     this.sessionCreated = true;
   }
@@ -296,13 +272,12 @@ class OpenAIRealtimeService {
     });
   }
 
-  // Send text message and get response using Chat Completions API (via backend proxy)
+  // Send text message and get response using backend Chat Completions API
   async sendTextMessage(text, options = {}) {
-    console.log('📝 Sending text message via backend proxy:', text);
+    console.log('📝 Sending text message via backend:', text);
 
     try {
-      // Use appropriate API endpoint based on environment
-      const response = await fetch(config.chatUrl, {
+      const response = await fetch(`${config.backendUrl}/api/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -325,7 +300,7 @@ class OpenAIRealtimeService {
         const assistantMessage = data.choices[0]?.message?.content;
 
         if (assistantMessage) {
-          console.log('✅ Backend proxy response received:', assistantMessage);
+          console.log('✅ Backend response received:', assistantMessage);
 
           // Trigger the message callback to add the response to the chat
           if (this.onMessage) {
@@ -341,11 +316,11 @@ class OpenAIRealtimeService {
         }
       } else {
         const errorData = await response.json();
-        console.error('❌ Backend proxy error:', response.status, errorData);
-        throw new Error(`Backend error: ${errorData.error || response.statusText}`);
+        console.error('❌ Backend API error:', response.status, errorData);
+        throw new Error(`Backend API error: ${errorData.error || response.statusText}`);
       }
     } catch (error) {
-      console.error('❌ Error sending message via backend:', error.message);
+      console.error('❌ Error sending message to backend:', error.message);
       throw new Error(`Failed to send message: ${error.message}`);
     }
   }
